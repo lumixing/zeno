@@ -32,7 +32,7 @@ main :: proc() {
 
 	if true {
 		for top_stmt in parser.top_stmts {
-			fmt.println(top_stmt)
+			fmt.printfln("%#v", top_stmt)
 		}
 	}
 }

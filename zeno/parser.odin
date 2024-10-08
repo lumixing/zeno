@@ -19,27 +19,20 @@ parser_parse :: proc(parser: ^Parser) {
 		case .Ident:
 			func_name := token.value.(string)
 
-			parser_whitespace(parser)
 			parser_expect(parser, .LParen)
-			parser_whitespace(parser)
 			parser_expect(parser, .RParen)
-			parser_whitespace(parser)
 			parser_expect(parser, .LBrace)
-			parser_whitespace(parser)
 
 			func_stmts: [dynamic]Stmt
 			for parser_peek(parser^).type == .Ident {
 				stmt, error := parse_stmt(parser)
 				if error != nil {
-					// panic("a  fucking error occurd")
 					err(parser.source, error.?.lo, error.?.str)
 				}
 				append(&func_stmts, stmt.?)
 			}
 
-			parser_whitespace(parser)
 			parser_expect(parser, .RBrace)
-			parser_whitespace(parser)
 
 			append(&parser.top_stmts, FuncDeclare{func_name, func_stmts[:]})
 		case .EOF:
@@ -75,7 +68,18 @@ parser_whitespace :: proc(parser: ^Parser, newline := true) {
 	}
 }
 
-parser_expect :: proc(parser: ^Parser, token_type: TokenType) -> TokenValue {
+parser_expect :: proc(
+	parser: ^Parser,
+	token_type: TokenType,
+	whitespace_between := true,
+) -> TokenValue {
+	if whitespace_between {
+		parser_whitespace(parser)
+	}
+	defer if whitespace_between {
+		parser_whitespace(parser)
+	}
+
 	if token := parser_advance(parser); token.type == token_type {
 		return token.value
 	} else {
