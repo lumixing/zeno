@@ -46,7 +46,7 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			terminated := true
 
 			for lexer_peek(lexer^) != '"' {
-				if lexer_end(lexer^) {
+				if lexer_end(lexer^) || lexer_peek(lexer^) == '\n' {
 					terminated = false
 					break
 				}
