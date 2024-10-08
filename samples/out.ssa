@@ -1,0 +1,7 @@
+data $string = { b "hello world\n", b 0 }
+
+export function w $main() {
+@start
+	call $printf(l $string, )
+	ret 0
+}
