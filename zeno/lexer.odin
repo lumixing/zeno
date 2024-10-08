@@ -61,19 +61,12 @@ lexer_scan :: proc(lexer: ^Lexer) {
 				ident := string(lexer.source[lexer.start:lexer.current])
 				lexer_add(lexer, .Ident, ident)
 			} else {
-				err(lexer^, lexer.start, "invalid char %c (%d)", char, char)
+				err(lexer.source, lexer.start, "invalid char %c (%d)", char, char)
 			}
 		}
 	}
 
 	lexer_add(lexer, .EOF)
-}
-
-err :: proc(lexer: Lexer, lo: int, str: string, args: ..any) -> ! {
-	line, col := get_line_col(string(lexer.source), lo)
-	fmt.printf("error at %d:%d: ", line, col)
-	fmt.printfln(str, ..args)
-	os.exit(1)
 }
 
 lexer_advance :: proc(lexer: ^Lexer) -> u8 {

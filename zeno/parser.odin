@@ -3,6 +3,7 @@ package zeno
 import "core:fmt"
 
 Parser :: struct {
+	source:    []u8,
 	tokens:    []Token,
 	top_stmts: [dynamic]TopStmt,
 	start:     int,
@@ -28,7 +29,11 @@ parser_parse :: proc(parser: ^Parser) {
 
 			func_stmts: [dynamic]Stmt
 			for parser_peek(parser^).type == .Ident {
-				stmt := parse_stmt(parser)
+				stmt, error := parse_stmt(parser)
+				if error != nil {
+					// panic("a  fucking error occurd")
+					err(parser.source, error.?.lo, error.?.str)
+				}
 				append(&func_stmts, stmt.?)
 			}
 
@@ -39,28 +44,28 @@ parser_parse :: proc(parser: ^Parser) {
 			append(&parser.top_stmts, FuncDeclare{func_name, func_stmts[:]})
 		case .EOF:
 		case:
-			fmt.panicf("expected Ident (for funcdecl) but got %v", token)
+			err(parser.source, token.span.lo, "expected function name but got %v", token.type)
 		}
 	}
 }
 
-parse_stmt :: proc(parser: ^Parser) -> Maybe(Stmt) {
+parse_stmt :: proc(parser: ^Parser) -> (Stmt, Maybe(Error)) {
 	parser_whitespace(parser)
 
-	call_name, ok := parser_expect_ok(parser, .Ident).(string)
-	if !ok do return nil
+	call_name, err := parser_expect_err(parser, .Ident)
+	if err != nil do return nil, err
 
-	if _, ok := parser_expect_ok(parser, .LParen); !ok do return nil
+	if _, err := parser_expect_err(parser, .LParen); err != nil do return nil, err
 
-	call_str, ok2 := parser_expect_ok(parser, .String).(string)
-	if !ok2 do return nil
+	call_str, err2 := parser_expect_err(parser, .String)
+	if err2 != nil do return nil, err2
 
-	if _, ok := parser_expect_ok(parser, .RParen); !ok do return nil
+	if _, err := parser_expect_err(parser, .RParen); err != nil do return nil, err
 	parser_whitespace(parser, false)
-	if _, ok := parser_expect_ok(parser, .Newline); !ok do return nil
+	if _, err := parser_expect_err(parser, .Newline); err != nil do return nil, err
 	parser_whitespace(parser)
 
-	return FuncCall{call_name, [dynamic]Expr{call_str}[:]}
+	return FuncCall{call_name.(string), [dynamic]Expr{call_str.(string)}[:]}, nil
 }
 
 parser_whitespace :: proc(parser: ^Parser, newline := true) {
@@ -74,21 +79,18 @@ parser_expect :: proc(parser: ^Parser, token_type: TokenType) -> TokenValue {
 	if token := parser_advance(parser); token.type == token_type {
 		return token.value
 	} else {
-		fmt.panicf("expected %v, got %v", token_type, token.type)
+		err(parser.source, token.span.lo, "expected %v but got %v", token_type, token.type)
 	}
 }
 
-parser_expect_ok :: proc(
-	parser: ^Parser,
-	token_type: TokenType,
-) -> (
-	TokenValue,
-	bool,
-) #optional_ok {
+parser_expect_err :: proc(parser: ^Parser, token_type: TokenType) -> (TokenValue, Maybe(Error)) {
 	if token := parser_advance(parser); token.type == token_type {
-		return token.value, true
+		return token.value, nil
 	} else {
-		return nil, false
+		return nil, Error {
+			token.span.lo,
+			fmt.tprintf("expected %v but got %v", token_type, token.type),
+		}
 	}
 }
 
@@ -106,18 +108,4 @@ parser_peek :: proc(parser: Parser) -> Token {
 		return {}
 	}
 	return parser.tokens[parser.current]
-}
-
-get_line_col :: proc(src: string, lo: int) -> (line, col: int) {
-	line = 1
-	col = 1
-	for i in 0 ..< lo {
-		if src[i] == '\n' {
-			line += 1
-			col = 1
-		} else {
-			col += 1
-		}
-	}
-	return line, col
 }

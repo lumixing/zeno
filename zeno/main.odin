@@ -26,6 +26,7 @@ main :: proc() {
 	}
 
 	parser := new(Parser)
+	parser.source = data
 	parser.tokens = lexer.tokens[:]
 	parser_parse(parser)
 
