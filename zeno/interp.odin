@@ -18,7 +18,7 @@ interp :: proc(source: []u8, top_stmts: []TopStmt) {
 
 			instrs: [dynamic]qbe.Instr
 			for stmt in tstmt.body {
-				switch st in stmt {
+				#partial switch st in stmt {
 				case FuncCall:
 				// append(&instrs, qbe.Call{st.name})
 				}

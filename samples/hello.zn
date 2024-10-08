@@ -1,11 +1,5 @@
-one() {
-    printf("1")
-}
-
-two() {
-    printf("2")
-}
-
 main() {
-    one("xd")
+    age int = 18
+    id int = 8223
+    print("age")
 }

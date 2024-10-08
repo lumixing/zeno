@@ -2,6 +2,7 @@ package zeno
 
 import "core:fmt"
 import "core:os"
+import "core:strconv"
 import "core:unicode"
 
 Lexer :: struct {
@@ -42,6 +43,8 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			lexer_add(lexer, .LBrace)
 		case '}':
 			lexer_add(lexer, .RBrace)
+		case '=':
+			lexer_add(lexer, .Equals)
 		case '"':
 			terminated := true
 
@@ -67,7 +70,23 @@ lexer_scan :: proc(lexer: ^Lexer) {
 				}
 
 				ident := string(lexer.source[lexer.start:lexer.current])
-				lexer_add(lexer, .Ident, ident)
+				switch ident {
+				case "int":
+					lexer_add(lexer, .KW_Int)
+				case:
+					lexer_add(lexer, .Ident, ident)
+				}
+			} else if unicode.is_digit(rune(char)) {
+				for unicode.is_digit(rune(lexer_peek(lexer^))) {
+					lexer.current += 1
+				}
+
+				str := string(lexer.source[lexer.start:lexer.current])
+				int_value, ok := strconv.parse_int(str)
+				if !ok {
+					err_log(lexer.source, lexer.start, "could not parse int %q", str)
+				}
+				lexer_add(lexer, .Int, int_value)
 			} else {
 				err_log(lexer.source, lexer.start, "invalid char %c (%d)", char, char)
 			}

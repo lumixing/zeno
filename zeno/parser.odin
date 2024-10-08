@@ -49,15 +49,32 @@ parse_stmt :: proc(parser: ^Parser) -> (Stmt, Maybe(Error)) {
 	#partial switch token.type {
 	case .Ident:
 		call_name := token.value.(string)
-		parser_expect(parser, .LParen)
-		call_str := parser_expect(parser, .String).(string)
-		parser_whitespace(parser)
-		parser_expect(parser, .RParen, false)
-		parser_whitespace(parser, false)
-		parser_expect(parser, .Newline, false)
 		parser_whitespace(parser)
 
-		return FuncCall{call_name, [dynamic]Expr{call_str}[:]}, nil
+		if parser_peek(parser^).type == .LParen {
+			parser_expect(parser, .LParen)
+			call_str := parser_expect(parser, .String).(string)
+			parser_whitespace(parser)
+			parser_expect(parser, .RParen, false)
+
+			parser_whitespace(parser, false)
+			parser_expect(parser, .Newline, false)
+			parser_whitespace(parser)
+
+			return FuncCall{call_name, [dynamic]Expr{call_str}[:]}, nil
+		} else if parser_peek(parser^).type == .KW_Int {
+			parser_expect(parser, .KW_Int)
+			parser_expect(parser, .Equals)
+			int_value := parser_expect(parser, .Int, false).(int)
+
+			parser_whitespace(parser, false)
+			parser_expect(parser, .Newline, false)
+			parser_whitespace(parser)
+
+			return VarDecl{call_name, .Int, int_value}, nil
+		} else {
+			err_log(parser.source, token.span.lo, "expected LParen or type but got %v", token.type)
+		}
 	case:
 		err_log(parser.source, token.span.lo, "expected statement but got %v", token.type)
 	}

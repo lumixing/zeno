@@ -15,11 +15,15 @@ TokenType :: enum {
 	RParen,
 	LBrace,
 	RBrace,
+	Equals,
 	String,
+	Int,
+	KW_Int,
 }
 
 TokenValue :: union {
 	string,
+	int,
 }
 
 Span :: struct {

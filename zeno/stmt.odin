@@ -17,6 +17,7 @@ FuncDeclare :: struct {
 
 Stmt :: union {
 	FuncCall,
+	VarDecl,
 }
 
 FuncCall :: struct {
@@ -24,6 +25,20 @@ FuncCall :: struct {
 	args: []Expr,
 }
 
+VarDecl :: struct {
+	name:  string,
+	type:  Type,
+	value: Value,
+}
+
 Expr :: union {
 	string,
+}
+
+Type :: enum {
+	Int,
+}
+
+Value :: union {
+	int,
 }
