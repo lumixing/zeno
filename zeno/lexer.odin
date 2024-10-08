@@ -26,6 +26,14 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			lexer_add(lexer, .Whitespace)
 		case '\n':
 			lexer_add(lexer, .Newline)
+		case '/':
+			if lexer_advance(lexer) == '/' {
+				for lexer_peek(lexer^) != '\n' {
+					lexer.current += 1
+				}
+			} else {
+				err_log(lexer.source, lexer.start, "expected another slash for a comment")
+			}
 		case '(':
 			lexer_add(lexer, .LParen)
 		case ')':
@@ -46,7 +54,7 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			}
 
 			if !terminated {
-				panic("unterminated string!")
+				err_log(lexer.source, lexer.start, "unterminated string")
 			}
 
 			lexer.current += 1
