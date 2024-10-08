@@ -1,3 +1,10 @@
+one() {
+    printf("1")
+}
+
+two() {
+    printf("2")
+}
+
 main() {
-    printf("xd")
 }

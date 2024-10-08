@@ -61,7 +61,7 @@ lexer_scan :: proc(lexer: ^Lexer) {
 				ident := string(lexer.source[lexer.start:lexer.current])
 				lexer_add(lexer, .Ident, ident)
 			} else {
-				err(lexer.source, lexer.start, "invalid char %c (%d)", char, char)
+				err_log(lexer.source, lexer.start, "invalid char %c (%d)", char, char)
 			}
 		}
 	}

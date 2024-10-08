@@ -4,7 +4,7 @@ import "../qbe"
 
 interp :: proc(source: []u8, top_stmts: []TopStmt) {
 	if len(top_stmts) == 0 {
-		err(source, 0, "no func declarations found")
+		err_log(source, 0, "no func declarations found")
 	}
 
 	lines: [dynamic]string
@@ -33,7 +33,7 @@ interp :: proc(source: []u8, top_stmts: []TopStmt) {
 		}
 
 		if !main_found {
-			err(source, 0, "no main func declaration found")
+			err_log(source, 0, "no main func declaration found")
 		}
 	}
 }

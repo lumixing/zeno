@@ -8,7 +8,7 @@ Error :: struct {
 	str: string,
 }
 
-err :: proc(source: []u8, lo: int, str: string, args: ..any) -> ! {
+err_log :: proc(source: []u8, lo: int, str: string, args: ..any) -> ! {
 	line, col := get_line_col(source, lo)
 	fmt.printf("error at %d:%d: ", line, col)
 	fmt.printfln(str, ..args)
