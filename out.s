@@ -1,7 +1,7 @@
 .data
 .balign 8
 strlit.0:
-	.ascii "bello"
+	.ascii "bello\\nthis wont work!"
 	.byte 0
 /* end data */
 
