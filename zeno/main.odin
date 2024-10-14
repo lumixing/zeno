@@ -1,7 +1,9 @@
 package zeno
 
+import "core:c/libc"
 import "core:fmt"
 import "core:os"
+import "core:strings"
 
 main :: proc() {
 	lexer := new(Lexer)
@@ -35,4 +37,10 @@ main :: proc() {
 			fmt.printfln("%#v", top_stmt)
 		}
 	}
+
+	lines := interp(data, parser.top_stmts[:])
+	lines_str := strings.join(lines, "")
+	//fmt.println(strings.join(lines, ""))
+	os.write_entire_file("samples/out.ssa", transmute([]u8)lines_str)
+	libc.system("qbe -o out.s samples/out.ssa && cc out.s && ./a.out")
 }
