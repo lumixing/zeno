@@ -1,3 +1,4 @@
 main() {
+    age int = 32
     printf("bello\nthis wont work!")
 }

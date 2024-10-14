@@ -16,6 +16,8 @@ Options :: struct {
 	input:        os.Handle `args:"pos=1,required,file=r"`,
 	print_tokens: bool `args:"name=tokens"`,
 	print_stmts:  bool `args:"name=stmts"`,
+	keep_ssa:     bool `args:"name=ssa"`,
+	keep_bin:     bool `args:"name=bin"`,
 }
 
 main :: proc() {
@@ -59,7 +61,14 @@ main :: proc() {
 
 	if opt.subcmd == .run {
 		fmt.println("finished compiling! running...")
-		libc.system("qbe -o out.s samples/out.ssa && cc out.s && ./a.out")
+		libc.system("qbe -o out.s samples/out.ssa && cc out.s && rm out.s && ./a.out")
+
+		if !opt.keep_ssa {
+			libc.system("rm samples/out.ssa")
+		}
+		if !opt.keep_bin {
+			libc.system("rm a.out")
+		}
 	} else {
 		fmt.println("finished compiling! wrote to samples/out.ssa")
 	}

@@ -1,7 +1,0 @@
-data $strlit.0 = { b "bello\\nthis wont work!", b 0 }
-
-export function w $main() {
-@start
-	call $printf(l $strlit.0, )
-	ret 0
-}
