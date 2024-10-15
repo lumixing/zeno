@@ -1,4 +1,5 @@
 main() {
-    age int = 32
+    age int = 18
+    id int = 69420
     printf("bello\nthis wont work!")
 }

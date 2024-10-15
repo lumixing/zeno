@@ -35,6 +35,7 @@ type_to_str :: proc(type: Type) -> string {
 Instr :: union {
 	Call,
 	Return,
+	TempDecl,
 }
 
 Call :: struct {
@@ -51,10 +52,20 @@ Return :: struct {
 	value: int,
 }
 
+TempDecl :: struct {
+	name:  string,
+	type:  Type,
+	value: int, // only call int for now due to illegal cycle
+}
+
 main :: proc() {
 	lines: [dynamic]string
 	data_string(&lines, "string", "hello world\n")
-	instrs := []Instr{Call{"printf", []Arg{{.Long, "string"}}}, Return{0}}
+	instrs := []Instr {
+		TempDecl{"temp", .Word, 69},
+		Call{"printf", []Arg{{.Long, "string"}}},
+		Return{0},
+	}
 	function(&lines, "main", .Word, true, instrs)
 
 	if len(os.args) == 1 {
@@ -98,6 +109,11 @@ instr :: proc(lines: ^[dynamic]string, instr: Instr) {
 		append(lines, fmt.tprintfln("\tcall $%s(%s)", ins.name, args(ins.args)))
 	case Return:
 		append(lines, fmt.tprintfln("\tret %d", ins.value))
+	case TempDecl:
+		append(
+			lines,
+			fmt.tprintfln("\t%%%s =%s copy %d", ins.name, type_to_str(ins.type), ins.value),
+		)
 	}
 }
 
