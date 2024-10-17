@@ -9,6 +9,11 @@ Var :: struct {
 	temp_name: string,
 }
 
+Func :: struct {
+	params:      []Param,
+	return_type: Type,
+}
+
 interp :: proc(source: []u8, top_stmts: []TopStmt) -> []string {
 	if len(top_stmts) == 0 {
 		err_log(source, 0, "no func declarations found")
@@ -17,18 +22,26 @@ interp :: proc(source: []u8, top_stmts: []TopStmt) -> []string {
 	lines: [dynamic]string
 	gid := 0
 	var_map: map[string]Var
+	func_map: map[string]Func
 
+	main_found := false
 	for top_stmt in top_stmts {
-		main_found := false
-
-		switch tstmt in top_stmt {
+		#partial switch tstmt in top_stmt {
 		case FuncDeclare:
+			if tstmt.name in func_map {
+				err_log(source, 0, "%q has already been declared as a function", tstmt.name)
+			}
+
 			is_main := tstmt.name == "main"
 
 			instrs: [dynamic]qbe.Instr
 			for stmt in tstmt.body {
 				#partial switch st in stmt {
 				case FuncCall:
+					if st.name not_in func_map {
+						err_log(source, 0, "%q has not been declared as a function", st.name)
+					}
+
 					assert(len(st.args) == 1, "temp ass for printf")
 					arg_str := st.args[0].(string)
 					str_gid := gid
@@ -53,11 +66,17 @@ interp :: proc(source: []u8, top_stmts: []TopStmt) -> []string {
 			}
 
 			qbe.function(&lines, tstmt.name, .Word, is_main, instrs[:])
-		}
+		case ForeignFuncDeclare:
+			if tstmt.name in func_map {
+				err_log(source, 0, "%q has already been declared as a function", tstmt.name)
+			}
 
-		if !main_found {
-			err_log(source, 0, "no main func declaration found")
+			func_map[tstmt.name] = {tstmt.params, tstmt.return_type}
 		}
+	}
+
+	if !main_found {
+		err_log(source, 0, "no main func declaration found")
 	}
 
 	return lines[:]

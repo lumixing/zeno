@@ -1,0 +1,5 @@
+#foreign puts(str) int
+
+main() void {
+    puts("hello world!\n")
+}

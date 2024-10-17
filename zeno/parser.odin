@@ -21,6 +21,10 @@ parser_parse :: proc(parser: ^Parser) {
 
 			parser_expect(parser, .LParen)
 			parser_expect(parser, .RParen)
+			ret_type, err := parse_type(parser)
+			if err, ok := err.?; ok {
+				err_log(parser.source, err.lo, err.str)
+			}
 			parser_expect(parser, .LBrace)
 
 			func_stmts: [dynamic]Stmt
@@ -34,8 +38,32 @@ parser_parse :: proc(parser: ^Parser) {
 
 			parser_expect(parser, .RBrace)
 
-			append(&parser.top_stmts, FuncDeclare{func_name, func_stmts[:]})
-		case .EOF:
+			append(&parser.top_stmts, FuncDeclare{func_name, func_stmts[:], ret_type})
+		case .Directive:
+			#partial switch token.value.(Directive) {
+			case .Foreign:
+				func_name := parser_expect(parser, .Ident).(string)
+				parser_expect(parser, .LParen)
+				param_type, err := parse_type(parser)
+				if err, ok := err.?; ok {
+					err_log(parser.source, err.lo, err.str)
+				}
+				parser_expect(parser, .RParen)
+				return_type: Type
+				return_type, err = parse_type(parser)
+				if err, ok := err.?; ok {
+					err_log(parser.source, err.lo, err.str)
+				}
+
+				parser_whitespace(parser, false)
+				parser_expect(parser, .Newline, false)
+				parser_whitespace(parser)
+
+				params := [dynamic]Param{{"", param_type}}
+
+				append(&parser.top_stmts, ForeignFuncDeclare{func_name, params[:], return_type})
+			}
+		case .Whitespace, .Newline, .EOF:
 		case:
 			err_log(parser.source, token.span.lo, "expected function name but got %v", token.type)
 		}
@@ -78,6 +106,21 @@ parse_stmt :: proc(parser: ^Parser) -> (Stmt, Maybe(Error)) {
 	case:
 		err_log(parser.source, token.span.lo, "expected statement but got %v", token.type)
 	}
+}
+
+parse_type :: proc(parser: ^Parser) -> (Type, Maybe(Error)) {
+	token := parser_advance(parser)
+	#partial switch token.type {
+	case .KW_Int:
+		return .Int, nil
+	case .KW_Str:
+		return .String, nil
+	case .KW_Void:
+		return .Void, nil
+	}
+
+	// err_log(parser.source, token.span.lo, "expected a type but got %v", token.type)
+	return {}, Error{token.span.lo, fmt.tprintf("expected a type but got %v", token.type)}
 }
 
 parser_whitespace :: proc(parser: ^Parser, newline := true) {

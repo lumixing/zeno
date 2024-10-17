@@ -2,18 +2,26 @@ package zeno
 
 TopStmt :: union {
 	FuncDeclare,
+	ForeignFuncDeclare,
 }
 
 FuncDeclare :: struct {
-	name: string,
+	name:        string,
 	// params: []Param,
-	body: []Stmt,
+	body:        []Stmt,
+	return_type: Type,
 }
 
-// Param :: struct {
-// 	name: string,
-//     type:
-// }
+ForeignFuncDeclare :: struct {
+	name:        string,
+	params:      []Param,
+	return_type: Type,
+}
+
+Param :: struct {
+	name: string,
+	type: Type,
+}
 
 Stmt :: union {
 	FuncCall,
@@ -36,7 +44,9 @@ Expr :: union {
 }
 
 Type :: enum {
+	Void,
 	Int,
+	String,
 }
 
 Value :: union {

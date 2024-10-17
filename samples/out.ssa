@@ -1,9 +1,7 @@
-data $strlit.2 = { b "bello\\nthis wont work!", b 0 }
+data $strlit.0 = { b "hello world!\\n", b 0 }
 
 export function w $main() {
 @start
-	%age.0 =w copy 18
-	%id.1 =w copy 69420
-	call $printf(l $strlit.2, )
+	call $puts(l $strlit.0, )
 	ret 0
 }

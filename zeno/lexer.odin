@@ -63,6 +63,18 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			lexer.current += 1
 			str := string(lexer.source[lexer.start + 1:lexer.current - 1])
 			lexer_add(lexer, .String, str)
+		case '#':
+			for unicode.is_alpha(rune(lexer_peek(lexer^))) {
+				lexer.current += 1
+			}
+
+			name := string(lexer.source[lexer.start + 1:lexer.current])
+			switch name {
+			case "foreign":
+				lexer_add(lexer, .Directive, Directive.Foreign)
+			case:
+				err_log(lexer.source, lexer.start, "%q is not a valid directive", name)
+			}
 		case:
 			if unicode.is_alpha(rune(char)) {
 				for unicode.is_alpha(rune(lexer_peek(lexer^))) {
@@ -73,6 +85,10 @@ lexer_scan :: proc(lexer: ^Lexer) {
 				switch ident {
 				case "int":
 					lexer_add(lexer, .KW_Int)
+				case "str":
+					lexer_add(lexer, .KW_Str)
+				case "void":
+					lexer_add(lexer, .KW_Void)
 				case:
 					lexer_add(lexer, .Ident, ident)
 				}
