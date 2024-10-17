@@ -1,5 +1,6 @@
 #foreign puts(str) int
 
 main() void {
-    puts("hello world!\n")
+    puts("kill all gingers")
+    puts(69)
 }

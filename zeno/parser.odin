@@ -81,7 +81,8 @@ parse_stmt :: proc(parser: ^Parser) -> (Stmt, Maybe(Error)) {
 
 		if parser_peek(parser^).type == .LParen {
 			parser_expect(parser, .LParen)
-			call_str := parser_expect(parser, .String).(string)
+			// call_str := parser_expect(parser, .String).(string)
+			arg_expr, err := parse_expr(parser)
 			parser_whitespace(parser)
 			parser_expect(parser, .RParen, false)
 
@@ -89,7 +90,7 @@ parse_stmt :: proc(parser: ^Parser) -> (Stmt, Maybe(Error)) {
 			parser_expect(parser, .Newline, false)
 			parser_whitespace(parser)
 
-			return FuncCall{call_name, [dynamic]Expr{call_str}[:]}, nil
+			return FuncCall{call_name, [dynamic]Expr{arg_expr}[:]}, nil
 		} else if parser_peek(parser^).type == .KW_Int {
 			parser_expect(parser, .KW_Int)
 			parser_expect(parser, .Equals)
@@ -106,6 +107,21 @@ parse_stmt :: proc(parser: ^Parser) -> (Stmt, Maybe(Error)) {
 	case:
 		err_log(parser.source, token.span.lo, "expected statement but got %v", token.type)
 	}
+}
+
+parse_expr :: proc(parser: ^Parser) -> (Expr, Maybe(Error)) {
+	parser_whitespace(parser)
+
+	token := parser_advance(parser)
+	#partial switch token.type {
+	case .String:
+		return token.value.(string), nil
+	case .Int:
+		return token.value.(int), nil
+	}
+
+	parser.current -= 1
+	return {}, Error{token.span.lo, fmt.tprintf("expected an expression but got %v", token.type)}
 }
 
 parse_type :: proc(parser: ^Parser) -> (Type, Maybe(Error)) {

@@ -1,7 +1,9 @@
 data $strlit.0 = { b "hello world!\\n", b 0 }
+data $strlit.1 = { b "hehe", b 0 }
 
 export function w $main() {
 @start
-	call $puts(l $strlit.0, )
+	call $puts(l $strlit.1, )
+	call $puts(l $strlit.1, )
 	ret 0
 }

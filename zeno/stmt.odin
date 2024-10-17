@@ -41,6 +41,7 @@ VarDecl :: struct {
 
 Expr :: union {
 	string,
+	int,
 }
 
 Type :: enum {

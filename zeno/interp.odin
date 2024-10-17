@@ -42,7 +42,23 @@ interp :: proc(source: []u8, top_stmts: []TopStmt) -> []string {
 						err_log(source, 0, "%q has not been declared as a function", st.name)
 					}
 
-					assert(len(st.args) == 1, "temp ass for printf")
+					// assert(len(st.args) == 1, "temp ass for printf")
+					assert(
+						len(st.args) == len(func_map[st.name].params),
+						"decl and call param len doesnt match!",
+					)
+					arg_type := expr_to_type(st.args[0])
+					par_type := func_map[st.name].params[0].type
+					if arg_type != par_type {
+						err_log(
+							source,
+							0,
+							"mismatched argument type in %q (should be %v but is %v)",
+							st.name,
+							par_type,
+							arg_type,
+						)
+					}
 					arg_str := st.args[0].(string)
 					str_gid := gid
 					gid += 1
@@ -80,4 +96,14 @@ interp :: proc(source: []u8, top_stmts: []TopStmt) -> []string {
 	}
 
 	return lines[:]
+}
+
+expr_to_type :: proc(expr: Expr) -> Type {
+	switch e in expr {
+	case string:
+		return .String
+	case int:
+		return .Int
+	}
+	return .Void
 }
