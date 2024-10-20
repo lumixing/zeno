@@ -91,16 +91,29 @@ parse_stmt :: proc(parser: ^Parser) -> (Stmt, Maybe(Error)) {
 			parser_whitespace(parser)
 
 			return FuncCall{call_name, [dynamic]Expr{arg_expr}[:]}, nil
-		} else if parser_peek(parser^).type == .KW_Int {
-			parser_expect(parser, .KW_Int)
+		} else if type, err := parse_type(parser); err == nil {
 			parser_expect(parser, .Equals)
-			int_value := parser_expect(parser, .Int, false).(int)
+			value: Value
+			// int_value := parser_expect(parser, .Int, false).(int)
+			switch type {
+			case .Int:
+				value = parser_expect(parser, .Int, false).(int)
+			case .String:
+				value = parser_expect(parser, .String, false).(string)
+			case .Void:
+				err_log(
+					parser.source,
+					token.span.lo,
+					"tried declaring variable %q of type void",
+					call_name,
+				)
+			}
 
 			parser_whitespace(parser, false)
 			parser_expect(parser, .Newline, false)
 			parser_whitespace(parser)
 
-			return VarDecl{call_name, .Int, int_value}, nil
+			return VarDecl{call_name, type, value}, nil
 		} else {
 			err_log(parser.source, token.span.lo, "expected LParen or type but got %v", token.type)
 		}
@@ -118,9 +131,11 @@ parse_expr :: proc(parser: ^Parser) -> (Expr, Maybe(Error)) {
 		return token.value.(string), nil
 	case .Int:
 		return token.value.(int), nil
+	case .Ident:
+		return VarIdent(token.value.(string)), nil
 	}
 
-	parser.current -= 1
+	parser.current -= 1 // prob error prone due to whitespace, pls fix
 	return {}, Error{token.span.lo, fmt.tprintf("expected an expression but got %v", token.type)}
 }
 

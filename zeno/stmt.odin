@@ -39,7 +39,10 @@ VarDecl :: struct {
 	value: Value,
 }
 
+VarIdent :: distinct string
+
 Expr :: union {
+	VarIdent,
 	string,
 	int,
 }
@@ -51,5 +54,6 @@ Type :: enum {
 }
 
 Value :: union {
+	string,
 	int,
 }
