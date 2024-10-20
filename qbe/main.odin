@@ -4,15 +4,6 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 
-Type :: enum {
-	Byte,
-	Halfword,
-	Word,
-	Long,
-	Single,
-	Double,
-}
-
 type_to_str :: proc(type: Type) -> string {
 	switch type {
 	case .Byte:
@@ -32,47 +23,41 @@ type_to_str :: proc(type: Type) -> string {
 	}
 }
 
-Instr :: union {
-	Call,
-	Return,
-	TempDecl,
-}
-
-Call :: struct {
-	name: string,
-	args: []Arg,
-}
-
-Arg :: struct {
-	type: Type,
-	name: string,
-}
-
-Return :: struct {
-	value: int,
-}
-
-TempDecl :: struct {
-	name:  string,
-	type:  Type,
-	value: int, // only call int for now due to illegal cycle
-}
-
 main :: proc() {
-	lines: [dynamic]string
-	data_string(&lines, "string", "hello world\n")
-	instrs := []Instr {
-		TempDecl{"temp", .Word, 69},
-		Call{"printf", []Arg{{.Long, "string"}}},
-		Return{0},
-	}
-	function(&lines, "main", .Word, true, instrs)
+	funcs: [dynamic]Func
+	datas: [dynamic]Data
+	instrs: [dynamic]Instr
 
-	if len(os.args) == 1 {
-		fmt.println(strings.join(lines[:], ""))
-	} else {
-		os.write_entire_file(os.args[1], transmute([]u8)strings.join(lines[:], ""))
+	append(&instrs, TempDecl{"temp", .Word, 69})
+	append(&instrs, Call{"puts", {{.Long, Global("string")}}})
+	append(&instrs, Return{0})
+	append(&funcs, Func{"main", .Word, true, instrs[:]})
+	append(&datas, Data{"string", {{.Byte, string("hello world\n")}, {.Byte, 0}}})
+
+	lines: [dynamic]string
+	for data in datas {
+		append(&lines, fmt.tprintf("data $%s = {{ %s}}", data.name, args(data.body)))
 	}
+	for func in funcs {
+		function(&lines, func.name, func.return_type, func.exported, func.body)
+	}
+
+	fmt.println(strings.join(lines[:], ""))
+
+	// lines: [dynamic]string
+	// data_string(&lines, "string", "hello world\n")
+	// instrs := []Instr {
+	// 	TempDecl{"temp", .Word, 69},
+	// 	Call{"printf", []Arg{{.Long, Global("string")}}},
+	// 	Return{0},
+	// }
+	// function(&lines, "main", .Word, true, instrs)
+
+	// if len(os.args) == 1 {
+	// 	fmt.println(strings.join(lines[:], ""))
+	// } else {
+	// 	os.write_entire_file(os.args[1], transmute([]u8)strings.join(lines[:], ""))
+	// }
 }
 
 data_string :: proc(lines: ^[dynamic]string, name, str: string) {
@@ -120,7 +105,22 @@ instr :: proc(lines: ^[dynamic]string, instr: Instr) {
 args :: proc(args: []Arg) -> string {
 	str: [dynamic]string
 	for arg in args {
-		append(&str, fmt.tprintf("%s $%s, ", type_to_str(arg.type), arg.name))
+		append(&str, fmt.tprintf("%s %s, ", type_to_str(arg.type), value(arg.value)))
 	}
 	return strings.join(str[:], "")
+}
+
+value :: proc(value: Value) -> string {
+	switch v in value {
+	case int:
+		return fmt.tprintf("%d", v)
+	case string:
+		return fmt.tprintf("%q", v)
+	case Global:
+		return fmt.tprintf("$%s", v)
+	case Temp:
+		return fmt.tprintf("%%%s", v)
+	}
+
+	return "INVALID_VALUE"
 }
