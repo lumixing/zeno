@@ -50,7 +50,6 @@ Instr :: union {
 InstrType :: enum {
 	Call,
 	Return,
-	TempDecl,
 }
 
 InstrArg :: struct {
@@ -80,12 +79,4 @@ Value :: union {
 	Temp,
 }
 
-Return :: struct {
-	value: Value,
-}
-
-TempDecl :: struct {
-	name:  string,
-	type:  Type,
-	value: int, // only call int for now due to illegal cycle
-}
+Return :: distinct Value

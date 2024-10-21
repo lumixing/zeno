@@ -1,5 +1,6 @@
 package zeno
 
+import "../qbe"
 import "core:c/libc"
 import "core:flags"
 import "core:fmt"
@@ -55,9 +56,10 @@ main :: proc() {
 		}
 	}
 
-	lines := interp(data, parser.top_stmts[:])
+	datas, funcs := gen_qbe(parser.top_stmts[:])
 	// lines_str := strings.join(lines, "")
-	os.write_entire_file("samples/out.ssa", transmute([]u8)lines)
+	qbestr := qbe.bake(datas, funcs)
+	os.write_entire_file("samples/out.ssa", transmute([]u8)qbestr)
 
 	if opt.subcmd == .run {
 		fmt.println("finished compiling! running...")

@@ -36,14 +36,13 @@ main :: proc() {
 	funcs: [dynamic]Func
 
 	append(&datas, Data{".0", {{.Byte, string("welcome!!!")}, {.Byte, 0}}})
-	// append(&datas, Data{".1", {{.Byte, string("saknigga")}, {.Byte, 0}}})
-	append(&datas, Data{".1", args_str("saknigga")})
+	append(&datas, Data{".1", args_str("cool string")})
 
 	body: [dynamic]Stmt
 	append(&body, Label("start"))
 	append(&body, Instr(Call{"puts", {{.Long, Glob(".0")}}}))
 	append(&body, Instr(Call{"puts", {{.Long, Glob(".1")}}}))
-	append(&body, Instr(Return{0}))
+	append(&body, Instr(Return(0)))
 	append(&funcs, Func{"main", .Word, {}, true, body[:]})
 
 	fmt.println(bake(datas[:], funcs[:]))
@@ -92,9 +91,9 @@ instr :: proc(instr: Instr) -> string {
 	case Call:
 		return fmt.tprintf("call $%s(%s)", ins.name, args(ins.args))
 	case Return:
-		return fmt.tprintf("ret %s", value(ins.value))
+		return fmt.tprintf("ret %s", value(Value(ins)))
 	case Copy:
-		return fmt.tprintf("call %s", value(Value(ins)))
+		return fmt.tprintf("copy %s", value(Value(ins)))
 	}
 
 	return "INVALID_INSTR"
