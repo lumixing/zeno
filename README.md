@@ -11,8 +11,12 @@ here's a snippet:
 
 ```go
 // hello.zn
-main() {
-    printf("hello zen!\n")
+#foreign puts(str) int
+
+main() void {
+    puts("hello world!")
+    username str = "lumixing"
+    puts(str)
 }
 ```
 
