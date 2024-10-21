@@ -9,6 +9,11 @@ Type :: enum {
 	Double,
 }
 
+Param :: struct {
+	name: string,
+	type: Type,
+}
+
 Data :: struct {
 	name: string,
 	body: []Arg,
@@ -17,16 +22,43 @@ Data :: struct {
 Func :: struct {
 	name:        string,
 	return_type: Type,
-	// params:      []Param,
+	params:      []Param,
 	exported:    bool,
-	body:        []Instr,
+	body:        []Stmt,
+}
+
+Stmt :: union {
+	Label,
+	TempDef,
+	Instr,
+}
+
+Label :: distinct string
+
+TempDef :: struct {
+	name:  string,
+	type:  Type,
+	instr: Instr,
 }
 
 Instr :: union {
+	Copy,
+	Call,
+	Return,
+}
+
+InstrType :: enum {
 	Call,
 	Return,
 	TempDecl,
 }
+
+InstrArg :: struct {
+	value: Value,
+	type:  Type,
+}
+
+Copy :: distinct Value
 
 Call :: struct {
 	name: string,
@@ -38,18 +70,18 @@ Arg :: struct {
 	value: Value,
 }
 
-Global :: distinct string
+Glob :: distinct string
 Temp :: distinct string
 
 Value :: union {
 	int,
 	string,
-	Global,
+	Glob,
 	Temp,
 }
 
 Return :: struct {
-	value: int,
+	value: Value,
 }
 
 TempDecl :: struct {

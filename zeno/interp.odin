@@ -16,12 +16,14 @@ Func :: struct {
 
 var_map: map[string]Var
 
-interp :: proc(source: []u8, top_stmts: []TopStmt) -> []string {
+interp :: proc(source: []u8, top_stmts: []TopStmt) -> string {
 	if len(top_stmts) == 0 {
 		err_log(source, 0, "no func declarations found")
 	}
 
-	lines: [dynamic]string
+	// lines: [dynamic]string
+	datas: [dynamic]qbe.Data
+	funcs: [dynamic]qbe.Func
 	gid := 0
 	func_map: map[string]Func
 
@@ -35,7 +37,9 @@ interp :: proc(source: []u8, top_stmts: []TopStmt) -> []string {
 
 			is_main := tstmt.name == "main"
 
-			instrs: [dynamic]qbe.Instr
+			body: [dynamic]qbe.Stmt
+			append(&body, qbe.Label("start"))
+
 			for stmt in tstmt.body {
 				#partial switch st in stmt {
 				case FuncCall:
@@ -66,21 +70,28 @@ interp :: proc(source: []u8, top_stmts: []TopStmt) -> []string {
 						str_gid := gid
 						gid += 1
 						tmp_str_name := fmt.tprintf("%s.%d", "strlit", str_gid)
-						qbe.data_string(&lines, tmp_str_name, arg_str)
+						// qbe.args_str(&lines, tmp_str_name, arg_str)
+						// append(
+						// 	&instrs,
+						// 	qbe.Call{st.name, []qbe.Arg{{.Long, qbe.Global(tmp_str_name)}}},
+						// )
+						append(&datas, qbe.Data{tmp_str_name, qbe.args_str(arg_str)})
 						append(
-							&instrs,
-							qbe.Call{st.name, []qbe.Arg{{.Long, qbe.Global(tmp_str_name)}}},
+							&body,
+							qbe.Instr(qbe.Call{st.name, {{.Long, qbe.Glob(tmp_str_name)}}}),
 						)
 						continue
 					}
 
 					if n, ok := st.args[0].(VarIdent); ok {
 						append(
-							&instrs,
-							qbe.Call {
-								st.name,
-								[]qbe.Arg{{.Long, qbe.Global(var_map[string(n)].temp_name)}},
-							},
+							&body,
+							qbe.Instr(
+								qbe.Call {
+									st.name,
+									{{.Long, qbe.Glob(var_map[string(n)].temp_name)}},
+								},
+							),
 						)
 					}
 				case VarDecl:
@@ -94,19 +105,21 @@ interp :: proc(source: []u8, top_stmts: []TopStmt) -> []string {
 
 					#partial switch st.type {
 					case .Int:
-						append(&instrs, qbe.TempDecl{var.temp_name, .Word, st.value.(int)})
+						append(&body, qbe.TempDef{var.temp_name, .Word, qbe.Copy(st.value.(int))})
 					case .String:
-						qbe.data_string(&lines, var_name, st.value.(string))
+						// qbe.args_str(&lines, var_name, st.value.(string))
+						append(&datas, qbe.Data{var_name, qbe.args_str(st.value.(string))})
 					}
 				}
 			}
 
 			if is_main {
 				main_found = true
-				append(&instrs, qbe.Return{0})
+				append(&body, qbe.Instr(qbe.Return{0}))
 			}
 
-			qbe.function(&lines, tstmt.name, .Word, is_main, instrs[:])
+			// qbe.function(&lines, tstmt.name, .Word, is_main, instrs[:])
+			append(&funcs, qbe.Func{tstmt.name, .Word, {}, true, body[:]})
 		case ForeignFuncDeclare:
 			if tstmt.name in func_map {
 				err_log(source, 0, "%q has already been declared as a function", tstmt.name)
@@ -120,7 +133,7 @@ interp :: proc(source: []u8, top_stmts: []TopStmt) -> []string {
 		err_log(source, 0, "no main func declaration found")
 	}
 
-	return lines[:]
+	return qbe.bake(datas[:], funcs[:])
 }
 
 expr_to_type :: proc(expr: Expr) -> Type {

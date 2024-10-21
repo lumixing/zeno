@@ -1,9 +1,0 @@
-data $.0 = { b "welcome!!!", b 0 }
-data $.1 = { b "saknigga", b 0 }
-
-export function w $main() {
-@start
-	call $puts(l $.0, )
-	call $puts(l $.1, )
-	ret 0
-}

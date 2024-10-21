@@ -1,7 +1,0 @@
-#foreign puts(str) int
-
-main() void {
-    puts("welcome!!!")
-    gingermf str = "saknigga"
-    puts(gingermf)
-}

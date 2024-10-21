@@ -4,7 +4,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 
-type_to_str :: proc(type: Type) -> string {
+type_to_str :: proc(type: Type, loc := #caller_location) -> string {
 	switch type {
 	case .Byte:
 		return "b"
@@ -19,87 +19,85 @@ type_to_str :: proc(type: Type) -> string {
 	case .Double:
 		return "d"
 	case:
-		panic("invalid type")
+		fmt.panicf("invalid type: %v (%v)", type, loc)
 	}
+}
+
+args_str :: proc(str: string) -> []Arg {
+	// cant return compound literal of slice
+	// return {{.Byte, str}, {.Byte, 0}}
+	args: [dynamic]Arg
+	append(&args, ..[]Arg{{.Byte, str}, {.Byte, 0}})
+	return args[:]
 }
 
 main :: proc() {
-	funcs: [dynamic]Func
 	datas: [dynamic]Data
-	instrs: [dynamic]Instr
+	funcs: [dynamic]Func
 
-	append(&instrs, TempDecl{"temp", .Word, 69})
-	append(&instrs, Call{"puts", {{.Long, Global("string")}}})
-	append(&instrs, Return{0})
-	append(&funcs, Func{"main", .Word, true, instrs[:]})
-	append(&datas, Data{"string", {{.Byte, string("hello world\n")}, {.Byte, 0}}})
+	append(&datas, Data{".0", {{.Byte, string("welcome!!!")}, {.Byte, 0}}})
+	// append(&datas, Data{".1", {{.Byte, string("saknigga")}, {.Byte, 0}}})
+	append(&datas, Data{".1", args_str("saknigga")})
 
+	body: [dynamic]Stmt
+	append(&body, Label("start"))
+	append(&body, Instr(Call{"puts", {{.Long, Glob(".0")}}}))
+	append(&body, Instr(Call{"puts", {{.Long, Glob(".1")}}}))
+	append(&body, Instr(Return{0}))
+	append(&funcs, Func{"main", .Word, {}, true, body[:]})
+
+	fmt.println(bake(datas[:], funcs[:]))
+}
+
+bake :: proc(datas: []Data, funcs: []Func) -> string {
 	lines: [dynamic]string
+
 	for data in datas {
-		append(&lines, fmt.tprintf("data $%s = {{ %s}}", data.name, args(data.body)))
+		append(&lines, fmt.tprintfln("data $%s = {{ %s}}", data.name, args(data.body)))
 	}
+	append(&lines, "\n")
+
 	for func in funcs {
-		function(&lines, func.name, func.return_type, func.exported, func.body)
+		signature := fmt.tprintfln(
+			"%sfunction %s $%s(%s) {{",
+			func.exported ? "export " : "",
+			type_to_str(func.return_type),
+			func.name,
+			params(func.params),
+		)
+
+		append(&lines, signature)
+		defer append(&lines, "}")
+
+		for stmt in func.body {
+			switch st in stmt {
+			case Label:
+				append(&lines, fmt.tprintfln("@%s", st))
+			case TempDef:
+				append(
+					&lines,
+					fmt.tprintfln("\t%%%s =%s %s", st.name, type_to_str(st.type), instr(st.instr)),
+				)
+			case Instr:
+				append(&lines, fmt.tprintfln("\t%s", instr(st)))
+			}
+		}
 	}
 
-	fmt.println(strings.join(lines[:], ""))
-
-	// lines: [dynamic]string
-	// data_string(&lines, "string", "hello world\n")
-	// instrs := []Instr {
-	// 	TempDecl{"temp", .Word, 69},
-	// 	Call{"printf", []Arg{{.Long, Global("string")}}},
-	// 	Return{0},
-	// }
-	// function(&lines, "main", .Word, true, instrs)
-
-	// if len(os.args) == 1 {
-	// 	fmt.println(strings.join(lines[:], ""))
-	// } else {
-	// 	os.write_entire_file(os.args[1], transmute([]u8)strings.join(lines[:], ""))
-	// }
+	return fmt.tprintln(strings.join(lines[:], ""))
 }
 
-data_string :: proc(lines: ^[dynamic]string, name, str: string) {
-	line := fmt.tprintfln("data $%s = {{ b %q, b 0 }}", name, str)
-	append(lines, line)
-}
-
-function :: proc(
-	lines: ^[dynamic]string,
-	name: string,
-	return_type: Type,
-	export: bool,
-	instrs: []Instr,
-) {
-	append(lines, "\n")
-
-	if export {
-		append(lines, "export ")
-	}
-
-	append(lines, fmt.tprintfln("function %s $%s() {{", type_to_str(return_type), name))
-	defer append(lines, "}\n")
-
-	append(lines, "@start\n")
-
-	for ins in instrs {
-		instr(lines, ins)
-	}
-}
-
-instr :: proc(lines: ^[dynamic]string, instr: Instr) {
+instr :: proc(instr: Instr) -> string {
 	switch ins in instr {
 	case Call:
-		append(lines, fmt.tprintfln("\tcall $%s(%s)", ins.name, args(ins.args)))
+		return fmt.tprintf("call $%s(%s)", ins.name, args(ins.args))
 	case Return:
-		append(lines, fmt.tprintfln("\tret %d", ins.value))
-	case TempDecl:
-		append(
-			lines,
-			fmt.tprintfln("\t%%%s =%s copy %d", ins.name, type_to_str(ins.type), ins.value),
-		)
+		return fmt.tprintf("ret %s", value(ins.value))
+	case Copy:
+		return fmt.tprintf("call %s", value(Value(ins)))
 	}
+
+	return "INVALID_INSTR"
 }
 
 args :: proc(args: []Arg) -> string {
@@ -110,13 +108,21 @@ args :: proc(args: []Arg) -> string {
 	return strings.join(str[:], "")
 }
 
+params :: proc(params: []Param) -> string {
+	str: [dynamic]string
+	for par in params {
+		append(&str, fmt.tprintf("%s %s, ", type_to_str(par.type), value(Temp(par.name))))
+	}
+	return strings.join(str[:], "")
+}
+
 value :: proc(value: Value) -> string {
 	switch v in value {
 	case int:
 		return fmt.tprintf("%d", v)
 	case string:
 		return fmt.tprintf("%q", v)
-	case Global:
+	case Glob:
 		return fmt.tprintf("$%s", v)
 	case Temp:
 		return fmt.tprintf("%%%s", v)

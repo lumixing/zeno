@@ -56,8 +56,8 @@ main :: proc() {
 	}
 
 	lines := interp(data, parser.top_stmts[:])
-	lines_str := strings.join(lines, "")
-	os.write_entire_file("samples/out.ssa", transmute([]u8)lines_str)
+	// lines_str := strings.join(lines, "")
+	os.write_entire_file("samples/out.ssa", transmute([]u8)lines)
 
 	if opt.subcmd == .run {
 		fmt.println("finished compiling! running...")
