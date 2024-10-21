@@ -50,6 +50,12 @@ $ zeno run hello.zn -v      # print verbose info
 
 ## docs
 documentation about the language is not available since it is still a work in progress.  
+what is currently supported:
+- strings and integers
+- functions (no params for non foreign)
+- variables
+- foreign functions (c ffi)
+
 here is a rough vision of the language though:
 
 ```go
