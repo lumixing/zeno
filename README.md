@@ -1,3 +1,10 @@
+```c
+// ·▄▄▄▄•▄▄▄ . ▐ ▄       
+// ▪▀·.█▌▀▄.▀·•█▌▐█▪     
+// ▄█▀▀▀•▐▀▀▪▄▐█▐▐▌ ▄█▀▄ 
+// █▌▪▄█▀▐█▄▄▌██▐█▌▐█▌.▐▌
+// ·▀▀▀ • ▀▀▀ ▀▀ █▪ ▀█▄▀▪
+```
 ## zeno, a small simple compiled language
 nothing serious, just a small language i'm working on to learn about compilers.  
 here's a snippet:
