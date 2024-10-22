@@ -78,7 +78,7 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 
 				var := var_map[string(arg)]
 				switch var.type {
-				case .Int:
+				case .Int, .Bool:
 					append(&args, qbe.Arg{.Word, qbe.Temp(var.temp_name)})
 				case .String:
 					append(&args, qbe.Arg{.Long, qbe.Glob(var.temp_name)})
@@ -90,7 +90,7 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 				name := fmt.tprintf("%s.%d", "__strlit", gid)
 				append(&datas, qbe.Data{name, qbe.args_str(arg)})
 				append(&args, qbe.Arg{.Long, qbe.Glob(name)})
-			case int:
+			case int, bool:
 				panic("unimpl!")
 			}
 		}
@@ -105,16 +105,15 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 		name := fmt.tprintf("%s.%d", st.name, gid)
 		var_map[st.name] = {gid, st.type, name}
 
-		type: qbe.Type
 		switch st.type {
 		case .Int:
-			type = .Word
-			append(body, qbe.TempDef{st.name, type, qbe.Copy(st.value.(int))})
+			append(body, qbe.TempDef{name, .Word, qbe.Copy(st.value.(int))})
 		case .String:
-			type = .Long
-			defer gid += 1
-			name := fmt.tprintf("%s.%d", st.name, gid)
+			// defer gid += 1
+			// name := fmt.tprintf("%s.%d", st.name, gid)
 			append(&datas, qbe.Data{name, qbe.args_str(st.value.(string))})
+		case .Bool:
+			append(body, qbe.TempDef{name, .Word, qbe.Copy(st.value.(bool) ? 1 : 0)})
 		case .Void:
 			fmt.panicf("trying to declare variable %q of type void!", st.name)
 		}
@@ -123,12 +122,10 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 
 type_to_qbe_type :: proc(type: Type) -> qbe.Type {
 	switch type {
-	case .Int:
+	case .Int, .Void, .Bool:
 		return .Word
 	case .String:
 		return .Long
-	case .Void:
-		return .Word
 	}
 
 	fmt.panicf("unreach (%v)", type)

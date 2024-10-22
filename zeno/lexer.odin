@@ -89,6 +89,12 @@ lexer_scan :: proc(lexer: ^Lexer) {
 					lexer_add(lexer, .KW_Str)
 				case "void":
 					lexer_add(lexer, .KW_Void)
+				case "bool":
+					lexer_add(lexer, .KW_Bool)
+				case "true":
+					lexer_add(lexer, .Bool, true)
+				case "false":
+					lexer_add(lexer, .Bool, false)
 				case:
 					lexer_add(lexer, .Ident, ident)
 				}

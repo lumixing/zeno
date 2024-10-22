@@ -45,10 +45,12 @@ Expr :: union {
 	VarIdent,
 	string,
 	int,
+	bool,
 }
 
 Type :: enum {
 	Void,
 	Int,
 	String,
+	Bool,
 }

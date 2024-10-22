@@ -97,6 +97,8 @@ parse_stmt :: proc(parser: ^Parser) -> (Stmt, Maybe(Error)) {
 				expr = parser_expect(parser, .Int, false).(int)
 			case .String:
 				expr = parser_expect(parser, .String, false).(string)
+			case .Bool:
+				expr = parser_expect(parser, .Bool, false).(bool)
 			case .Void:
 				err_log(
 					parser.source,
@@ -147,6 +149,8 @@ parse_type :: proc(parser: ^Parser) -> (Type, Maybe(Error)) {
 		return .String, nil
 	case .KW_Void:
 		return .Void, nil
+	case .KW_Bool:
+		return .Bool, nil
 	}
 
 	// err_log(parser.source, token.span.lo, "expected a type but got %v", token.type)
