@@ -36,7 +36,7 @@ FuncCall :: struct {
 VarDecl :: struct {
 	name:  string,
 	type:  Type,
-	value: Value,
+	value: Expr,
 }
 
 VarIdent :: distinct string
@@ -51,9 +51,4 @@ Type :: enum {
 	Void,
 	Int,
 	String,
-}
-
-Value :: union {
-	string,
-	int,
 }

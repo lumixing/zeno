@@ -71,6 +71,7 @@ parser_parse :: proc(parser: ^Parser) {
 }
 
 parse_stmt :: proc(parser: ^Parser) -> (Stmt, Maybe(Error)) {
+	stmt: Stmt
 	parser_whitespace(parser)
 
 	token := parser_advance(parser)
@@ -86,20 +87,16 @@ parse_stmt :: proc(parser: ^Parser) -> (Stmt, Maybe(Error)) {
 			parser_whitespace(parser)
 			parser_expect(parser, .RParen, false)
 
-			parser_whitespace(parser, false)
-			parser_expect(parser, .Newline, false)
-			parser_whitespace(parser)
-
-			return FuncCall{call_name, [dynamic]Expr{arg_expr}[:]}, nil
+			stmt = FuncCall{call_name, [dynamic]Expr{arg_expr}[:]}
 		} else if type, err := parse_type(parser); err == nil {
 			parser_expect(parser, .Equals)
-			value: Value
-			// int_value := parser_expect(parser, .Int, false).(int)
+			expr: Expr
+
 			switch type {
 			case .Int:
-				value = parser_expect(parser, .Int, false).(int)
+				expr = parser_expect(parser, .Int, false).(int)
 			case .String:
-				value = parser_expect(parser, .String, false).(string)
+				expr = parser_expect(parser, .String, false).(string)
 			case .Void:
 				err_log(
 					parser.source,
@@ -109,17 +106,19 @@ parse_stmt :: proc(parser: ^Parser) -> (Stmt, Maybe(Error)) {
 				)
 			}
 
-			parser_whitespace(parser, false)
-			parser_expect(parser, .Newline, false)
-			parser_whitespace(parser)
-
-			return VarDecl{call_name, type, value}, nil
+			stmt = VarDecl{call_name, type, expr}
 		} else {
 			err_log(parser.source, token.span.lo, "expected LParen or type but got %v", token.type)
 		}
+
+		parser_whitespace(parser, false)
+		parser_expect(parser, .Newline, false)
+		parser_whitespace(parser)
 	case:
 		err_log(parser.source, token.span.lo, "expected statement but got %v", token.type)
 	}
+
+	return stmt, nil
 }
 
 parse_expr :: proc(parser: ^Parser) -> (Expr, Maybe(Error)) {
