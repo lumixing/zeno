@@ -22,10 +22,27 @@ prs_parse :: proc(prs: ^Parser) {
 
 		#partial switch token.type {
 		case .Ident:
+			params: [dynamic]Param
+
 			ident_name := token.value.(string)
 
 			prs_expect(prs, .LParen)
-			// todo: param parsing
+			// todo: allow hanging comma
+			if param_name, ok := prs_expect(prs, .Ident).(string); ok {
+				param_type := prs_type(prs).?
+				append(&params, Param{param_name, param_type})
+
+				for prs_peek(prs^).type != .RParen {
+					if _, ok := prs_expect(prs, .Comma, .Nil); ok {
+						param_name := prs_expect(prs, .Ident).(string)
+						param_type := prs_type(prs).?
+						append(&params, Param{param_name, param_type})
+					} else {
+						// todo: this
+						panic("todo: give a meaningful error message here!")
+					}
+				}
+			}
 			prs_expect(prs, .RParen)
 
 			ret_type := prs_type(prs, .Nil).? or_else .Void
@@ -34,7 +51,7 @@ prs_parse :: proc(prs: ^Parser) {
 			// todo: stmt parsing
 			prs_expect(prs, .RBrace)
 
-			append(&prs.top_stmts, FuncDeclare{ident_name, {}, ret_type})
+			append(&prs.top_stmts, FuncDeclare{ident_name, params[:], {}, ret_type})
 		case .Directive:
 			switch token.value.(Directive) {
 			case .Foreign:

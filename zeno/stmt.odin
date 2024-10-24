@@ -7,7 +7,7 @@ TopStmt :: union {
 
 FuncDeclare :: struct {
 	name:        string,
-	// params: []Param,
+	params:      []Param,
 	body:        []Stmt,
 	return_type: Type,
 }
