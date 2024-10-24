@@ -21,6 +21,7 @@ TokenType :: enum {
 	LBrace,
 	RBrace,
 	Equals,
+	Comma,
 
 	// literals
 	String,

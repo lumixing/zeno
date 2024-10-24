@@ -24,7 +24,7 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			    lexer_peek(lexer^) == '\r' {
 				lexer.current += 1
 			}
-			lexer_add(lexer, .Whitespace)
+		// lexer_add(lexer, .Whitespace)
 		case '\n':
 			lexer_add(lexer, .Newline)
 		case '/':
@@ -45,6 +45,8 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			lexer_add(lexer, .RBrace)
 		case '=':
 			lexer_add(lexer, .Equals)
+		case ',':
+			lexer_add(lexer, .Comma)
 		case '"':
 			terminated := true
 

@@ -48,7 +48,7 @@ main :: proc() {
 	parser := new(Parser)
 	parser.source = data
 	parser.tokens = lexer.tokens[:]
-	parser_parse(parser)
+	prs_parse(parser)
 
 	if opt.print_stmts {
 		for top_stmt in parser.top_stmts {
