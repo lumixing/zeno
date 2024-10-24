@@ -28,6 +28,7 @@ lexer_scan :: proc(lexer: ^Lexer) {
 		case '\n':
 			lexer_add(lexer, .Newline)
 		case '/':
+			// todo: hangs on EOF (check other similar cases)
 			if lexer_advance(lexer) == '/' {
 				for lexer_peek(lexer^) != '\n' {
 					lexer.current += 1

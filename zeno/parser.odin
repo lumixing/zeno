@@ -53,6 +53,7 @@ prs_parse :: proc(prs: ^Parser) {
 			for prs_peek(prs^).type != .RBrace {
 				stmt := prs_stmt(prs).?
 				append(&stmts, stmt)
+				prs_ignore_newline(prs)
 			}
 			prs_expect(prs, .RBrace)
 
@@ -95,14 +96,37 @@ prs_stmt :: proc(prs: ^Parser, prs_ret: ParseReturn = .Err) -> Maybe(Stmt) {
 	#partial switch token.type {
 	case .Ident:
 		ident_name := token.value.(string)
-		var_type := prs_type(prs).?
-		prs_expect(prs, .Equals)
-		var_value := prs_expr(prs).?
 
-		// todo: allow also RBrace
-		prs_expect(prs, .Newline)
+		if var_type, ok := prs_type(prs, .Nil).?; ok {
+			prs_expect(prs, .Equals)
+			var_value := prs_expr(prs).?
 
-		return VarDecl{ident_name, var_type, var_value}
+			// todo: allow also RBrace
+			prs_expect(prs, .Newline)
+
+			return VarDecl{ident_name, var_type, var_value}
+		} else if _, ok := prs_expect(prs, .LParen, .Nil); ok {
+			args: [dynamic]Expr
+
+			if arg, ok := prs_expr(prs, .Nil).?; ok {
+				append(&args, arg)
+
+				for prs_peek(prs^).type != .RParen {
+					if _, ok := prs_expect(prs, .Comma, .Nil); ok {
+						arg := prs_expr(prs).?
+						append(&args, arg)
+					} else {
+						// todo: this
+						panic("todo: give a meaningful error message here!")
+					}
+				}
+			}
+			prs_expect(prs, .RParen)
+
+			return FuncCall{ident_name, args[:]}
+		} else {
+			err_log(prs.source, token.span.lo, "expected Type or LParen but got %v", token.type)
+		}
 	case:
 		if prs_ret == .Err {
 			err_log(prs.source, token.span.lo, "expected a statement but got %v", token.type)
