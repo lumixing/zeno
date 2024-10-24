@@ -23,6 +23,7 @@ prs_parse :: proc(prs: ^Parser) {
 		#partial switch token.type {
 		case .Ident:
 			params: [dynamic]Param
+			stmts: [dynamic]Stmt
 
 			ident_name := token.value.(string)
 
@@ -48,10 +49,14 @@ prs_parse :: proc(prs: ^Parser) {
 			ret_type := prs_type(prs, .Nil).? or_else .Void
 
 			prs_expect(prs, .LBrace)
-			// todo: stmt parsing
+			prs_ignore_newline(prs)
+			for prs_peek(prs^).type != .RBrace {
+				stmt := prs_stmt(prs).?
+				append(&stmts, stmt)
+			}
 			prs_expect(prs, .RBrace)
 
-			append(&prs.top_stmts, FuncDeclare{ident_name, params[:], {}, ret_type})
+			append(&prs.top_stmts, FuncDeclare{ident_name, params[:], stmts[:], ret_type})
 		case .Directive:
 			switch token.value.(Directive) {
 			case .Foreign:
@@ -82,6 +87,55 @@ prs_parse :: proc(prs: ^Parser) {
 				append(&prs.top_stmts, ForeignFuncDeclare{func_name, params[:], ret_type})
 			}
 		}
+	}
+}
+
+prs_stmt :: proc(prs: ^Parser, prs_ret: ParseReturn = .Err) -> Maybe(Stmt) {
+	token := prs_advance(prs)
+	#partial switch token.type {
+	case .Ident:
+		ident_name := token.value.(string)
+		var_type := prs_type(prs).?
+		prs_expect(prs, .Equals)
+		var_value := prs_expr(prs).?
+
+		// todo: allow also RBrace
+		prs_expect(prs, .Newline)
+
+		return VarDecl{ident_name, var_type, var_value}
+	case:
+		if prs_ret == .Err {
+			err_log(prs.source, token.span.lo, "expected a statement but got %v", token.type)
+		} else {
+			prs.current -= 1
+			return nil
+		}
+	}
+}
+
+prs_expr :: proc(prs: ^Parser, prs_ret: ParseReturn = .Err) -> Maybe(Expr) {
+	token := prs_advance(prs)
+	#partial switch token.type {
+	case .String:
+		return token.value.(string)
+	case .Int:
+		return token.value.(int)
+	case .Ident:
+		return VarIdent(token.value.(string))
+	case:
+		if prs_ret == .Err {
+			err_log(prs.source, token.span.lo, "expected an expression but got %v", token.type)
+		} else {
+			prs.current -= 1
+			return nil
+		}
+	}
+}
+
+// todo: error prone, might forget to put somewhere, find other solution
+prs_ignore_newline :: proc(prs: ^Parser) {
+	for prs_peek(prs^).type == .Newline {
+		prs.current += 1
 	}
 }
 
