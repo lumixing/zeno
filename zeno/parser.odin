@@ -127,6 +127,19 @@ prs_stmt :: proc(prs: ^Parser, prs_ret: ParseReturn = .Err) -> Maybe(Stmt) {
 		} else {
 			err_log(prs.source, token.span.lo, "expected Type or LParen but got %v", token.type)
 		}
+	case .KW_If:
+		body: [dynamic]Stmt
+		cond := prs_expr(prs).?
+		prs_expect(prs, .LBrace)
+		prs_ignore_newline(prs)
+		for prs_peek(prs^).type != .RBrace {
+			stmt := prs_stmt(prs).?
+			append(&body, stmt)
+			prs_ignore_newline(prs)
+		}
+		prs_expect(prs, .RBrace)
+
+		return IfBranch{cond, body[:]}
 	case:
 		if prs_ret == .Err {
 			err_log(prs.source, token.span.lo, "expected a statement but got %v", token.type)
@@ -144,6 +157,8 @@ prs_expr :: proc(prs: ^Parser, prs_ret: ParseReturn = .Err) -> Maybe(Expr) {
 		return token.value.(string)
 	case .Int:
 		return token.value.(int)
+	case .Bool:
+		return token.value.(bool)
 	case .Ident:
 		return VarIdent(token.value.(string))
 	case:
@@ -190,6 +205,8 @@ prs_type :: proc(prs: ^Parser, prs_ret: ParseReturn = .Err) -> Maybe(Type) {
 		return .Int
 	case .KW_Str:
 		return .String
+	case .KW_Bool:
+		return .Bool
 	case .KW_Void:
 		return .Void
 	case:

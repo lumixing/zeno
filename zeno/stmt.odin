@@ -26,6 +26,7 @@ Param :: struct {
 Stmt :: union {
 	FuncCall,
 	VarDecl,
+	IfBranch,
 }
 
 FuncCall :: struct {
@@ -39,16 +40,23 @@ VarDecl :: struct {
 	value: Expr,
 }
 
+IfBranch :: struct {
+	cond: Expr,
+	body: []Stmt,
+}
+
 VarIdent :: distinct string
 
 Expr :: union {
 	VarIdent,
 	string,
 	int,
+	bool,
 }
 
 Type :: enum {
 	Void,
 	Int,
 	String,
+	Bool,
 }

@@ -94,6 +94,13 @@ instr :: proc(instr: Instr) -> string {
 		return fmt.tprintf("ret %s", value(Value(ins)))
 	case Copy:
 		return fmt.tprintf("copy %s", value(Value(ins)))
+	case CondJump:
+		return fmt.tprintf(
+			"jnz %s, @%s, @%s",
+			value(ins.value),
+			ins.non_zero_label,
+			ins.zero_label,
+		)
 	}
 
 	return "INVALID_INSTR"

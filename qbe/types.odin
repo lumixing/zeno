@@ -45,11 +45,7 @@ Instr :: union {
 	Copy,
 	Call,
 	Return,
-}
-
-InstrType :: enum {
-	Call,
-	Return,
+	CondJump,
 }
 
 InstrArg :: struct {
@@ -80,3 +76,9 @@ Value :: union {
 }
 
 Return :: distinct Value
+
+CondJump :: struct {
+	value:          Value,
+	non_zero_label: Label,
+	zero_label:     Label,
+}

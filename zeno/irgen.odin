@@ -69,7 +69,8 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 
 		args: [dynamic]qbe.Arg
 		for arg in st.args {
-			switch arg in arg {
+			// todo: remove partial!
+			#partial switch arg in arg {
 			case VarIdent:
 				// todo: also check name in func_map and vice versa
 				if string(arg) not_in var_map {
@@ -77,7 +78,8 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 				}
 
 				var := var_map[string(arg)]
-				switch var.type {
+				// todo: remove partial!
+				#partial switch var.type {
 				case .Int:
 					append(&args, qbe.Arg{.Word, qbe.Temp(var.temp_name)})
 				case .String:
@@ -106,23 +108,57 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 		var_map[st.name] = {gid, st.type, name}
 
 		type: qbe.Type
+		// todo: remove partial!
 		switch st.type {
 		case .Int:
-			type = .Word
-			append(body, qbe.TempDef{st.name, type, qbe.Copy(st.value.(int))})
+			defer gid += 1
+			name := fmt.tprintf("%s.%d", st.name, gid)
+			append(body, qbe.TempDef{name, .Word, qbe.Copy(st.value.(int))})
 		case .String:
-			type = .Long
 			defer gid += 1
 			name := fmt.tprintf("%s.%d", st.name, gid)
 			append(&datas, qbe.Data{name, qbe.args_str(st.value.(string))})
+		case .Bool:
+			defer gid += 1
+			name := fmt.tprintf("%s.%d", st.name, gid)
+			append(body, qbe.TempDef{name, .Word, qbe.Copy(st.value.(bool) ? 1 : 0)})
 		case .Void:
-			fmt.panicf("trying to declare variable %q of type void!", st.name)
+			err_log({}, 0, "trying to declare variable %q of type void!", st.name)
+		}
+	case IfBranch:
+		// todo: expand this
+		if var_name, ok := st.cond.(VarIdent); ok {
+			if string(var_name) not_in var_map {
+				err_log({}, 0, "%q is not declared as a variable.", string(var_name))
+			}
+
+			var := var_map[string(var_name)]
+			if var.type != .Bool {
+				err_log(
+					{},
+					0,
+					"%q is of type %s but needed to be %s.",
+					string(var_name),
+					var.type,
+					Type.Bool,
+				)
+			}
+
+			append(body, qbe.Instr(qbe.CondJump{qbe.Temp(var.temp_name), "true", "end"}))
+			append(body, qbe.Label("true"))
+			for ifst in st.body {
+				do_stmt(ifst, body)
+			}
+			append(body, qbe.Label("end"))
+		} else {
+			err_log({}, 0, "Invalid boolean expression in if condition.")
 		}
 	}
 }
 
 type_to_qbe_type :: proc(type: Type) -> qbe.Type {
-	switch type {
+	// todo: remove partial!
+	#partial switch type {
 	case .Int:
 		return .Word
 	case .String:
