@@ -26,6 +26,7 @@ gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
 	for top_stmt in top_stmts {
 		switch tst in top_stmt {
 		case FuncDeclare:
+			return_type := type_to_qbe_type(tst.return_type)
 			// todo: main func checking
 			if tst.name in func_map {
 				err_log({}, 0, "%q is already declared as a function.", tst.name)
@@ -40,13 +41,12 @@ gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
 			}
 
 			if tst.name == "main" {
-				append(&body, qbe.Instr(qbe.Return(0)))
+				return_type = .Word
 			}
 
-			append(
-				&funcs,
-				qbe.Func{tst.name, type_to_qbe_type(tst.return_type), {}, true, body[:]},
-			)
+			append(&body, qbe.Instr(qbe.Return(tst.name == "main" ? 0 : nil)))
+
+			append(&funcs, qbe.Func{tst.name, return_type, {}, true, body[:]})
 		case ForeignFuncDeclare:
 			if tst.name in func_map {
 				err_log({}, 0, "%q is already declared as a function.", tst.name)
@@ -89,7 +89,7 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 				}
 			case string:
 				defer gid += 1
-				name := fmt.tprintf("%s.%d", "__strlit", gid)
+				name := fmt.tprintf("%s.%d", ".strlit", gid)
 				append(&datas, qbe.Data{name, qbe.args_str(arg)})
 				append(&args, qbe.Arg{.Long, qbe.Glob(name)})
 			case int:
@@ -156,15 +156,14 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 	}
 }
 
-type_to_qbe_type :: proc(type: Type) -> qbe.Type {
-	// todo: remove partial!
-	#partial switch type {
-	case .Int:
+type_to_qbe_type :: proc(type: Type) -> Maybe(qbe.Type) {
+	switch type {
+	case .Int, .Bool:
 		return .Word
 	case .String:
 		return .Long
 	case .Void:
-		return .Word
+		return nil
 	}
 
 	fmt.panicf("unreach (%v)", type)

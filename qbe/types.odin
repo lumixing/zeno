@@ -21,7 +21,7 @@ Data :: struct {
 
 Func :: struct {
 	name:        string,
-	return_type: Type,
+	return_type: Maybe(Type),
 	params:      []Param,
 	exported:    bool,
 	body:        []Stmt,
@@ -75,7 +75,7 @@ Value :: union {
 	Temp,
 }
 
-Return :: distinct Value
+Return :: distinct Maybe(Value)
 
 CondJump :: struct {
 	value:          Value,
