@@ -27,6 +27,7 @@ Stmt :: union {
 	FuncCall,
 	VarDecl,
 	IfBranch,
+	Block,
 }
 
 FuncCall :: struct {
@@ -44,6 +45,8 @@ IfBranch :: struct {
 	cond: Expr,
 	body: []Stmt,
 }
+
+Block :: distinct []Stmt
 
 VarIdent :: distinct string
 

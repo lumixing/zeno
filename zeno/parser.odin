@@ -140,6 +140,17 @@ prs_stmt :: proc(prs: ^Parser, prs_ret: ParseReturn = .Err) -> Maybe(Stmt) {
 		prs_expect(prs, .RBrace)
 
 		return IfBranch{cond, body[:]}
+	case .LBrace:
+		stmts: [dynamic]Stmt
+		prs_ignore_newline(prs)
+		for prs_peek(prs^).type != .RBrace {
+			stmt := prs_stmt(prs).?
+			append(&stmts, stmt)
+			prs_ignore_newline(prs)
+		}
+		prs_expect(prs, .RBrace)
+
+		return Block(stmts[:])
 	case:
 		if prs_ret == .Err {
 			err_log(prs.source, token.span.lo, "expected a statement but got %v", token.type)

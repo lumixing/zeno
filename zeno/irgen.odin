@@ -66,7 +66,7 @@ gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
 		}
 	}
 
-	fmt.println(global_scope)
+	// fmt.println(global_scope)
 	return datas[:], funcs[:]
 }
 
@@ -86,7 +86,6 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt, scope: ^Scope) {
 				// todo: also check name in func_map and vice versa
 				check_scope := scope
 				for {
-					fmt.println("checking scope", check_scope)
 					if string(arg) not_in check_scope.vars {
 						if parent_scope, ok := check_scope.parent.?; ok {
 							check_scope = parent_scope
@@ -176,6 +175,11 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt, scope: ^Scope) {
 			append(body, qbe.Label("end"))
 		} else {
 			err_log({}, 0, "Invalid boolean expression in if condition.")
+		}
+	case Block:
+		blockscope := Scope{scope, {}, {}}
+		for bst in st {
+			do_stmt(bst, body, &blockscope)
 		}
 	}
 }
