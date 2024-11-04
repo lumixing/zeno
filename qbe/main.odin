@@ -60,13 +60,13 @@ bake :: proc(datas: []Data, funcs: []Func) -> string {
 		signature := fmt.tprintfln(
 			"%sfunction %s $%s(%s) {{",
 			func.exported ? "export " : "",
-			type_to_str(func.return_type),
+			func.return_type == nil ? "" : type_to_str(func.return_type.?),
 			func.name,
 			params(func.params),
 		)
 
 		append(&lines, signature)
-		defer append(&lines, "}")
+		defer append(&lines, "}\n\n")
 
 		for stmt in func.body {
 			switch st in stmt {
@@ -91,9 +91,16 @@ instr :: proc(instr: Instr) -> string {
 	case Call:
 		return fmt.tprintf("call $%s(%s)", ins.name, args(ins.args))
 	case Return:
-		return fmt.tprintf("ret %s", value(Value(ins)))
+		return fmt.tprintf("ret %s", ins == nil ? "" : value(Value(ins.?)))
 	case Copy:
 		return fmt.tprintf("copy %s", value(Value(ins)))
+	case CondJump:
+		return fmt.tprintf(
+			"jnz %s, @%s, @%s",
+			value(ins.value),
+			ins.non_zero_label,
+			ins.zero_label,
+		)
 	}
 
 	return "INVALID_INSTR"

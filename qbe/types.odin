@@ -21,7 +21,7 @@ Data :: struct {
 
 Func :: struct {
 	name:        string,
-	return_type: Type,
+	return_type: Maybe(Type),
 	params:      []Param,
 	exported:    bool,
 	body:        []Stmt,
@@ -45,11 +45,7 @@ Instr :: union {
 	Copy,
 	Call,
 	Return,
-}
-
-InstrType :: enum {
-	Call,
-	Return,
+	CondJump,
 }
 
 InstrArg :: struct {
@@ -79,4 +75,10 @@ Value :: union {
 	Temp,
 }
 
-Return :: distinct Value
+Return :: distinct Maybe(Value)
+
+CondJump :: struct {
+	value:          Value,
+	non_zero_label: Label,
+	zero_label:     Label,
+}

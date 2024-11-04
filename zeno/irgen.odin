@@ -14,9 +14,16 @@ Var :: struct {
 	temp_name: string,
 }
 
+Scope :: struct {
+	parent:   Maybe(^Scope),
+	children: [dynamic]^Scope,
+	vars:     map[string]Var,
+}
+
 gid := 0
 func_map: map[string]Func
 var_map: map[string]Var
+global_scope := Scope{nil, {}, {}}
 
 datas: [dynamic]qbe.Data
 funcs: [dynamic]qbe.Func
@@ -26,6 +33,10 @@ gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
 	for top_stmt in top_stmts {
 		switch tst in top_stmt {
 		case FuncDeclare:
+			scope := Scope{&global_scope, {}, {}}
+			append(&global_scope.children, &scope)
+
+			return_type := type_to_qbe_type(tst.return_type)
 			// todo: main func checking
 			if tst.name in func_map {
 				err_log({}, 0, "%q is already declared as a function.", tst.name)
@@ -36,17 +47,16 @@ gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
 			append(&body, qbe.Label("start"))
 
 			for stmt in tst.body {
-				do_stmt(stmt, &body)
+				do_stmt(stmt, &body, &scope)
 			}
 
 			if tst.name == "main" {
-				append(&body, qbe.Instr(qbe.Return(0)))
+				return_type = .Word
 			}
 
-			append(
-				&funcs,
-				qbe.Func{tst.name, type_to_qbe_type(tst.return_type), {}, true, body[:]},
-			)
+			append(&body, qbe.Instr(qbe.Return(tst.name == "main" ? 0 : nil)))
+
+			append(&funcs, qbe.Func{tst.name, return_type, {}, true, body[:]})
 		case ForeignFuncDeclare:
 			if tst.name in func_map {
 				err_log({}, 0, "%q is already declared as a function.", tst.name)
@@ -56,10 +66,11 @@ gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
 		}
 	}
 
+	// fmt.println(global_scope)
 	return datas[:], funcs[:]
 }
 
-do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
+do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt, scope: ^Scope) {
 	switch st in stmt {
 	case FuncCall:
 		// todo: type checking for args
@@ -69,15 +80,27 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 
 		args: [dynamic]qbe.Arg
 		for arg in st.args {
-			switch arg in arg {
+			// todo: remove partial!
+			#partial switch arg in arg {
 			case VarIdent:
 				// todo: also check name in func_map and vice versa
-				if string(arg) not_in var_map {
-					err_log({}, 0, "%q is not declared as a variable.", string(arg))
+				check_scope := scope
+				for {
+					if string(arg) not_in check_scope.vars {
+						if parent_scope, ok := check_scope.parent.?; ok {
+							check_scope = parent_scope
+						} else {
+							err_log({}, 0, "%q is not declared as a variable.", string(arg))
+							// break
+						}
+					} else {
+						break
+					}
 				}
 
-				var := var_map[string(arg)]
-				switch var.type {
+				var := check_scope.vars[string(arg)]
+				// todo: remove partial!
+				#partial switch var.type {
 				case .Int:
 					append(&args, qbe.Arg{.Word, qbe.Temp(var.temp_name)})
 				case .String:
@@ -87,7 +110,7 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 				}
 			case string:
 				defer gid += 1
-				name := fmt.tprintf("%s.%d", "__strlit", gid)
+				name := fmt.tprintf("%s.%d", ".strlit", gid)
 				append(&datas, qbe.Data{name, qbe.args_str(arg)})
 				append(&args, qbe.Arg{.Long, qbe.Glob(name)})
 			case int:
@@ -97,38 +120,78 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 		append(body, qbe.Instr(qbe.Call{st.name, args[:]}))
 	case VarDecl:
 		// todo: type checking between type and expr type
-		if st.name in var_map {
+		if st.name in scope.vars {
 			err_log({}, 0, "%q is already declared as a variable.", st.name)
 		}
 
 		defer gid += 1
 		name := fmt.tprintf("%s.%d", st.name, gid)
-		var_map[st.name] = {gid, st.type, name}
+		scope.vars[st.name] = {gid, st.type, name}
 
 		type: qbe.Type
+		// todo: remove partial!
 		switch st.type {
 		case .Int:
-			type = .Word
-			append(body, qbe.TempDef{st.name, type, qbe.Copy(st.value.(int))})
+			defer gid += 1
+			name := fmt.tprintf("%s.%d", st.name, gid)
+			append(body, qbe.TempDef{name, .Word, qbe.Copy(st.value.(int))})
 		case .String:
-			type = .Long
 			defer gid += 1
 			name := fmt.tprintf("%s.%d", st.name, gid)
 			append(&datas, qbe.Data{name, qbe.args_str(st.value.(string))})
+		case .Bool:
+			defer gid += 1
+			name := fmt.tprintf("%s.%d", st.name, gid)
+			append(body, qbe.TempDef{name, .Word, qbe.Copy(st.value.(bool) ? 1 : 0)})
 		case .Void:
-			fmt.panicf("trying to declare variable %q of type void!", st.name)
+			err_log({}, 0, "trying to declare variable %q of type void!", st.name)
+		}
+	case IfBranch:
+		// todo: expand this
+		if var_name, ok := st.cond.(VarIdent); ok {
+			if string(var_name) not_in scope.vars {
+				err_log({}, 0, "%q is not declared as a variable.", string(var_name))
+			}
+
+			var := scope.vars[string(var_name)]
+			if var.type != .Bool {
+				err_log(
+					{},
+					0,
+					"%q is of type %s but needed to be %s.",
+					string(var_name),
+					var.type,
+					Type.Bool,
+				)
+			}
+
+			append(body, qbe.Instr(qbe.CondJump{qbe.Temp(var.temp_name), "true", "end"}))
+			append(body, qbe.Label("true"))
+			ifscope := Scope{scope, {}, {}}
+
+			for ifst in st.body {
+				do_stmt(ifst, body, &ifscope)
+			}
+			append(body, qbe.Label("end"))
+		} else {
+			err_log({}, 0, "Invalid boolean expression in if condition.")
+		}
+	case Block:
+		blockscope := Scope{scope, {}, {}}
+		for bst in st {
+			do_stmt(bst, body, &blockscope)
 		}
 	}
 }
 
-type_to_qbe_type :: proc(type: Type) -> qbe.Type {
+type_to_qbe_type :: proc(type: Type) -> Maybe(qbe.Type) {
 	switch type {
-	case .Int:
+	case .Int, .Bool:
 		return .Word
 	case .String:
 		return .Long
 	case .Void:
-		return .Word
+		return nil
 	}
 
 	fmt.panicf("unreach (%v)", type)

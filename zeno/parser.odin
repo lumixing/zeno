@@ -10,198 +10,238 @@ Parser :: struct {
 	current:   int,
 }
 
-parser_parse :: proc(parser: ^Parser) {
-	for !parser_end(parser^) {
-		parser.start = parser.current
-		token := parser_advance(parser)
+ParseReturn :: enum {
+	Err,
+	Nil,
+}
+
+prs_parse :: proc(prs: ^Parser) {
+	for !prs_end(prs^) {
+		prs.start = prs.current
+		token := prs_advance(prs)
 
 		#partial switch token.type {
 		case .Ident:
-			func_name := token.value.(string)
+			params: [dynamic]Param
+			stmts: [dynamic]Stmt
 
-			parser_expect(parser, .LParen)
-			parser_expect(parser, .RParen)
-			ret_type, err := parse_type(parser)
-			if err, ok := err.?; ok {
-				err_log(parser.source, err.lo, err.str)
-			}
-			parser_expect(parser, .LBrace)
+			ident_name := token.value.(string)
 
-			func_stmts: [dynamic]Stmt
-			for parser_peek(parser^).type != .RBrace {
-				stmt, err := parse_stmt(parser)
-				if err, ok := err.?; ok {
-					err_log(parser.source, err.lo, err.str)
+			prs_expect(prs, .LParen)
+			// todo: allow hanging comma
+			if param_name, ok := prs_expect(prs, .Ident).(string); ok {
+				param_type := prs_type(prs).?
+				append(&params, Param{param_name, param_type})
+
+				for prs_peek(prs^).type != .RParen {
+					if _, ok := prs_expect(prs, .Comma, .Nil); ok {
+						param_name := prs_expect(prs, .Ident).(string)
+						param_type := prs_type(prs).?
+						append(&params, Param{param_name, param_type})
+					} else {
+						// todo: this
+						panic("todo: give a meaningful error message here!")
+					}
 				}
-				append(&func_stmts, stmt)
 			}
+			prs_expect(prs, .RParen)
 
-			parser_expect(parser, .RBrace)
+			ret_type := prs_type(prs, .Nil).? or_else .Void
 
-			append(&parser.top_stmts, FuncDeclare{func_name, func_stmts[:], ret_type})
+			prs_expect(prs, .LBrace)
+			prs_ignore_newline(prs)
+			for prs_peek(prs^).type != .RBrace {
+				stmt := prs_stmt(prs).?
+				append(&stmts, stmt)
+				prs_ignore_newline(prs)
+			}
+			prs_expect(prs, .RBrace)
+
+			append(&prs.top_stmts, FuncDeclare{ident_name, params[:], stmts[:], ret_type})
 		case .Directive:
-			#partial switch token.value.(Directive) {
+			switch token.value.(Directive) {
 			case .Foreign:
-				func_name := parser_expect(parser, .Ident).(string)
-				parser_expect(parser, .LParen)
-				param_type, err := parse_type(parser)
-				if err, ok := err.?; ok {
-					err_log(parser.source, err.lo, err.str)
+				params: [dynamic]Param
+
+				func_name := prs_expect(prs, .Ident).(string)
+
+				prs_expect(prs, .LParen)
+				if param_type, ok := prs_type(prs, .Nil).?; ok {
+					append(&params, Param{"", param_type})
+
+					for prs_peek(prs^).type != .RParen {
+						if _, ok := prs_expect(prs, .Comma, .Nil); ok {
+							param_type := prs_type(prs).?
+							append(&params, Param{"", param_type})
+						} else {
+							// todo: this
+							panic("todo: give a meaningful error message here!")
+						}
+					}
 				}
-				parser_expect(parser, .RParen)
-				return_type: Type
-				return_type, err = parse_type(parser)
-				if err, ok := err.?; ok {
-					err_log(parser.source, err.lo, err.str)
-				}
+				prs_expect(prs, .RParen)
 
-				parser_whitespace(parser, false)
-				parser_expect(parser, .Newline, false)
-				parser_whitespace(parser)
+				ret_type := prs_type(prs, .Nil).? or_else .Void
 
-				params := [dynamic]Param{{"", param_type}}
+				prs_expect(prs, .Newline)
 
-				append(&parser.top_stmts, ForeignFuncDeclare{func_name, params[:], return_type})
+				append(&prs.top_stmts, ForeignFuncDeclare{func_name, params[:], ret_type})
 			}
-		case .Whitespace, .Newline, .EOF:
-		case:
-			err_log(parser.source, token.span.lo, "expected function name but got %v", token.type)
 		}
 	}
 }
 
-parse_stmt :: proc(parser: ^Parser) -> (Stmt, Maybe(Error)) {
-	stmt: Stmt
-	parser_whitespace(parser)
-
-	token := parser_advance(parser)
+prs_stmt :: proc(prs: ^Parser, prs_ret: ParseReturn = .Err) -> Maybe(Stmt) {
+	token := prs_advance(prs)
 	#partial switch token.type {
 	case .Ident:
-		call_name := token.value.(string)
-		parser_whitespace(parser)
+		ident_name := token.value.(string)
 
-		if parser_peek(parser^).type == .LParen {
-			parser_expect(parser, .LParen)
-			// call_str := parser_expect(parser, .String).(string)
-			arg_expr, err := parse_expr(parser)
-			parser_whitespace(parser)
-			parser_expect(parser, .RParen, false)
+		if var_type, ok := prs_type(prs, .Nil).?; ok {
+			prs_expect(prs, .Equals)
+			var_value := prs_expr(prs).?
 
-			stmt = FuncCall{call_name, [dynamic]Expr{arg_expr}[:]}
-		} else if type, err := parse_type(parser); err == nil {
-			parser_expect(parser, .Equals)
-			expr: Expr
+			// todo: allow also RBrace
+			prs_expect(prs, .Newline)
 
-			switch type {
-			case .Int:
-				expr = parser_expect(parser, .Int, false).(int)
-			case .String:
-				expr = parser_expect(parser, .String, false).(string)
-			case .Void:
-				err_log(
-					parser.source,
-					token.span.lo,
-					"tried declaring variable %q of type void",
-					call_name,
-				)
+			return VarDecl{ident_name, var_type, var_value}
+		} else if _, ok := prs_expect(prs, .LParen, .Nil); ok {
+			args: [dynamic]Expr
+
+			if arg, ok := prs_expr(prs, .Nil).?; ok {
+				append(&args, arg)
+
+				for prs_peek(prs^).type != .RParen {
+					if _, ok := prs_expect(prs, .Comma, .Nil); ok {
+						arg := prs_expr(prs).?
+						append(&args, arg)
+					} else {
+						// todo: this
+						panic("todo: give a meaningful error message here!")
+					}
+				}
 			}
+			prs_expect(prs, .RParen)
 
-			stmt = VarDecl{call_name, type, expr}
+			return FuncCall{ident_name, args[:]}
 		} else {
-			err_log(parser.source, token.span.lo, "expected LParen or type but got %v", token.type)
+			err_log(prs.source, token.span.lo, "expected Type or LParen but got %v", token.type)
 		}
+	case .KW_If:
+		body: [dynamic]Stmt
+		cond := prs_expr(prs).?
+		prs_expect(prs, .LBrace)
+		prs_ignore_newline(prs)
+		for prs_peek(prs^).type != .RBrace {
+			stmt := prs_stmt(prs).?
+			append(&body, stmt)
+			prs_ignore_newline(prs)
+		}
+		prs_expect(prs, .RBrace)
 
-		parser_whitespace(parser, false)
-		parser_expect(parser, .Newline, false)
-		parser_whitespace(parser)
+		return IfBranch{cond, body[:]}
+	case .LBrace:
+		stmts: [dynamic]Stmt
+		prs_ignore_newline(prs)
+		for prs_peek(prs^).type != .RBrace {
+			stmt := prs_stmt(prs).?
+			append(&stmts, stmt)
+			prs_ignore_newline(prs)
+		}
+		prs_expect(prs, .RBrace)
+
+		return Block(stmts[:])
 	case:
-		err_log(parser.source, token.span.lo, "expected statement but got %v", token.type)
+		if prs_ret == .Err {
+			err_log(prs.source, token.span.lo, "expected a statement but got %v", token.type)
+		} else {
+			prs.current -= 1
+			return nil
+		}
 	}
-
-	return stmt, nil
 }
 
-parse_expr :: proc(parser: ^Parser) -> (Expr, Maybe(Error)) {
-	parser_whitespace(parser)
-
-	token := parser_advance(parser)
+prs_expr :: proc(prs: ^Parser, prs_ret: ParseReturn = .Err) -> Maybe(Expr) {
+	token := prs_advance(prs)
 	#partial switch token.type {
 	case .String:
-		return token.value.(string), nil
+		return token.value.(string)
 	case .Int:
-		return token.value.(int), nil
+		return token.value.(int)
+	case .Bool:
+		return token.value.(bool)
 	case .Ident:
-		return VarIdent(token.value.(string)), nil
-	}
-
-	parser.current -= 1 // prob error prone due to whitespace, pls fix
-	return {}, Error{token.span.lo, fmt.tprintf("expected an expression but got %v", token.type)}
-}
-
-parse_type :: proc(parser: ^Parser) -> (Type, Maybe(Error)) {
-	token := parser_advance(parser)
-	#partial switch token.type {
-	case .KW_Int:
-		return .Int, nil
-	case .KW_Str:
-		return .String, nil
-	case .KW_Void:
-		return .Void, nil
-	}
-
-	// err_log(parser.source, token.span.lo, "expected a type but got %v", token.type)
-	return {}, Error{token.span.lo, fmt.tprintf("expected a type but got %v", token.type)}
-}
-
-parser_whitespace :: proc(parser: ^Parser, newline := true) {
-	for parser_peek(parser^).type == .Whitespace ||
-	    (newline && parser_peek(parser^).type == .Newline) {
-		parser.current += 1
-	}
-}
-
-parser_expect :: proc(
-	parser: ^Parser,
-	token_type: TokenType,
-	whitespace_between := true,
-) -> TokenValue {
-	if whitespace_between {
-		parser_whitespace(parser)
-	}
-	defer if whitespace_between {
-		parser_whitespace(parser)
-	}
-
-	if token := parser_advance(parser); token.type == token_type {
-		return token.value
-	} else {
-		err_log(parser.source, token.span.lo, "expected %v but got %v", token_type, token.type)
-	}
-}
-
-parser_expect_err :: proc(parser: ^Parser, token_type: TokenType) -> (TokenValue, Maybe(Error)) {
-	if token := parser_advance(parser); token.type == token_type {
-		return token.value, nil
-	} else {
-		return nil, Error {
-			token.span.lo,
-			fmt.tprintf("expected %v but got %v", token_type, token.type),
+		return VarIdent(token.value.(string))
+	case:
+		if prs_ret == .Err {
+			err_log(prs.source, token.span.lo, "expected an expression but got %v", token.type)
+		} else {
+			prs.current -= 1
+			return nil
 		}
 	}
 }
 
-parser_end :: proc(parser: Parser) -> bool {
-	return parser.current >= len(parser.tokens)
+// todo: error prone, might forget to put somewhere, find other solution
+prs_ignore_newline :: proc(prs: ^Parser) {
+	for prs_peek(prs^).type == .Newline {
+		prs.current += 1
+	}
 }
 
-parser_advance :: proc(parser: ^Parser) -> Token {
-	defer parser.current += 1
-	return parser_peek(parser^)
+prs_expect :: proc(
+	prs: ^Parser,
+	tk_type: TokenType,
+	prs_ret: ParseReturn = .Err,
+) -> (
+	value: TokenValue,
+	ok: bool,
+) #optional_ok {
+	if token := prs_advance(prs); token.type == tk_type {
+		return token.value, true
+	} else {
+		if prs_ret == .Err {
+			err_log(prs.source, token.span.lo, "expected %v but got %v", tk_type, token.type)
+		} else {
+			prs.current -= 1
+			return nil, false
+		}
+	}
 }
 
-parser_peek :: proc(parser: Parser) -> Token {
-	if parser_end(parser) {
+prs_type :: proc(prs: ^Parser, prs_ret: ParseReturn = .Err) -> Maybe(Type) {
+	token := prs_advance(prs)
+	#partial switch token.type {
+	case .KW_Int:
+		return .Int
+	case .KW_Str:
+		return .String
+	case .KW_Bool:
+		return .Bool
+	case .KW_Void:
+		return .Void
+	case:
+		if prs_ret == .Err {
+			err_log(prs.source, token.span.lo, "expected a type but got %v", token.type)
+		} else {
+			prs.current -= 1
+			return nil
+		}
+	}
+}
+
+prs_end :: proc(prs: Parser) -> bool {
+	return prs.current >= len(prs.tokens)
+}
+
+prs_advance :: proc(prs: ^Parser) -> Token {
+	defer prs.current += 1
+	return prs_peek(prs^)
+}
+
+prs_peek :: proc(prs: Parser) -> Token {
+	if prs_end(prs) {
 		return {}
 	}
-	return parser.tokens[parser.current]
+	return prs.tokens[prs.current]
 }

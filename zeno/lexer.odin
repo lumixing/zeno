@@ -24,10 +24,11 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			    lexer_peek(lexer^) == '\r' {
 				lexer.current += 1
 			}
-			lexer_add(lexer, .Whitespace)
+		// lexer_add(lexer, .Whitespace)
 		case '\n':
 			lexer_add(lexer, .Newline)
 		case '/':
+			// todo: hangs on EOF (check other similar cases)
 			if lexer_advance(lexer) == '/' {
 				for lexer_peek(lexer^) != '\n' {
 					lexer.current += 1
@@ -45,6 +46,8 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			lexer_add(lexer, .RBrace)
 		case '=':
 			lexer_add(lexer, .Equals)
+		case ',':
+			lexer_add(lexer, .Comma)
 		case '"':
 			terminated := true
 
@@ -76,8 +79,8 @@ lexer_scan :: proc(lexer: ^Lexer) {
 				err_log(lexer.source, lexer.start, "%q is not a valid directive", name)
 			}
 		case:
-			if unicode.is_alpha(rune(char)) {
-				for unicode.is_alpha(rune(lexer_peek(lexer^))) {
+			if is_ident_char(char) {
+				for is_ident_char(lexer_peek(lexer^), true) {
 					lexer.current += 1
 				}
 
@@ -89,6 +92,14 @@ lexer_scan :: proc(lexer: ^Lexer) {
 					lexer_add(lexer, .KW_Str)
 				case "void":
 					lexer_add(lexer, .KW_Void)
+				case "bool":
+					lexer_add(lexer, .KW_Bool)
+				case "true":
+					lexer_add(lexer, .Bool, true)
+				case "false":
+					lexer_add(lexer, .Bool, false)
+				case "if":
+					lexer_add(lexer, .KW_If)
 				case:
 					lexer_add(lexer, .Ident, ident)
 				}
@@ -131,4 +142,12 @@ lexer_add :: proc(lexer: ^Lexer, type: TokenType, value: TokenValue = nil) {
 
 lexer_end :: proc(lexer: Lexer) -> bool {
 	return lexer.current >= len(lexer.source)
+}
+
+is_ident_char :: proc(char: u8, use_digits := false) -> bool {
+	is := unicode.is_alpha(rune(char)) || char == '_'
+	if use_digits {
+		is ||= unicode.is_digit(rune(char))
+	}
+	return is
 }

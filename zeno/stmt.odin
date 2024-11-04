@@ -7,7 +7,7 @@ TopStmt :: union {
 
 FuncDeclare :: struct {
 	name:        string,
-	// params: []Param,
+	params:      []Param,
 	body:        []Stmt,
 	return_type: Type,
 }
@@ -26,6 +26,8 @@ Param :: struct {
 Stmt :: union {
 	FuncCall,
 	VarDecl,
+	IfBranch,
+	Block,
 }
 
 FuncCall :: struct {
@@ -39,16 +41,25 @@ VarDecl :: struct {
 	value: Expr,
 }
 
+IfBranch :: struct {
+	cond: Expr,
+	body: []Stmt,
+}
+
+Block :: distinct []Stmt
+
 VarIdent :: distinct string
 
 Expr :: union {
 	VarIdent,
 	string,
 	int,
+	bool,
 }
 
 Type :: enum {
 	Void,
 	Int,
 	String,
+	Bool,
 }
