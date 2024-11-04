@@ -50,22 +50,34 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			lexer_add(lexer, .Comma)
 		case '"':
 			terminated := true
+			str: [dynamic]u8
 
 			for lexer_peek(lexer^) != '"' {
 				if lexer_end(lexer^) || lexer_peek(lexer^) == '\n' {
 					terminated = false
 					break
 				}
+				if lexer_peek(lexer^) == '\\' {
+					lexer.current += 1
+					if lexer_peek(lexer^) == 'n' {
+						lexer.current += 1
+						append(&str, '\n')
+					} else {
+						err_log(lexer.source, lexer.current, "Invalid escape character.")
+					}
+					continue
+				}
+				append(&str, lexer_peek(lexer^))
 				lexer.current += 1
 			}
 
 			if !terminated {
-				err_log(lexer.source, lexer.start, "unterminated string")
+				err_log(lexer.source, lexer.start, "String is unterminated.")
 			}
 
 			lexer.current += 1
-			str := string(lexer.source[lexer.start + 1:lexer.current - 1])
-			lexer_add(lexer, .String, str)
+			// str := string(lexer.source[lexer.start + 1:lexer.current - 1])
+			lexer_add(lexer, .String, string(str[:]))
 		case '#':
 			for unicode.is_alpha(rune(lexer_peek(lexer^))) {
 				lexer.current += 1
