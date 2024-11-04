@@ -14,9 +14,16 @@ Var :: struct {
 	temp_name: string,
 }
 
+Scope :: struct {
+	parent:   Maybe(^Scope),
+	children: [dynamic]^Scope,
+	vars:     map[string]Var,
+}
+
 gid := 0
 func_map: map[string]Func
 var_map: map[string]Var
+global_scope := Scope{nil, {}, {}}
 
 datas: [dynamic]qbe.Data
 funcs: [dynamic]qbe.Func
@@ -26,6 +33,9 @@ gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
 	for top_stmt in top_stmts {
 		switch tst in top_stmt {
 		case FuncDeclare:
+			scope := Scope{&global_scope, {}, {}}
+			append(&global_scope.children, &scope)
+
 			return_type := type_to_qbe_type(tst.return_type)
 			// todo: main func checking
 			if tst.name in func_map {
@@ -37,7 +47,7 @@ gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
 			append(&body, qbe.Label("start"))
 
 			for stmt in tst.body {
-				do_stmt(stmt, &body)
+				do_stmt(stmt, &body, &scope)
 			}
 
 			if tst.name == "main" {
@@ -56,10 +66,11 @@ gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
 		}
 	}
 
+	fmt.println(global_scope)
 	return datas[:], funcs[:]
 }
 
-do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
+do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt, scope: ^Scope) {
 	switch st in stmt {
 	case FuncCall:
 		// todo: type checking for args
@@ -73,11 +84,22 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 			#partial switch arg in arg {
 			case VarIdent:
 				// todo: also check name in func_map and vice versa
-				if string(arg) not_in var_map {
-					err_log({}, 0, "%q is not declared as a variable.", string(arg))
+				check_scope := scope
+				for {
+					fmt.println("checking scope", check_scope)
+					if string(arg) not_in check_scope.vars {
+						if parent_scope, ok := check_scope.parent.?; ok {
+							check_scope = parent_scope
+						} else {
+							err_log({}, 0, "%q is not declared as a variable.", string(arg))
+							// break
+						}
+					} else {
+						break
+					}
 				}
 
-				var := var_map[string(arg)]
+				var := check_scope.vars[string(arg)]
 				// todo: remove partial!
 				#partial switch var.type {
 				case .Int:
@@ -99,13 +121,13 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 		append(body, qbe.Instr(qbe.Call{st.name, args[:]}))
 	case VarDecl:
 		// todo: type checking between type and expr type
-		if st.name in var_map {
+		if st.name in scope.vars {
 			err_log({}, 0, "%q is already declared as a variable.", st.name)
 		}
 
 		defer gid += 1
 		name := fmt.tprintf("%s.%d", st.name, gid)
-		var_map[st.name] = {gid, st.type, name}
+		scope.vars[st.name] = {gid, st.type, name}
 
 		type: qbe.Type
 		// todo: remove partial!
@@ -128,11 +150,11 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 	case IfBranch:
 		// todo: expand this
 		if var_name, ok := st.cond.(VarIdent); ok {
-			if string(var_name) not_in var_map {
+			if string(var_name) not_in scope.vars {
 				err_log({}, 0, "%q is not declared as a variable.", string(var_name))
 			}
 
-			var := var_map[string(var_name)]
+			var := scope.vars[string(var_name)]
 			if var.type != .Bool {
 				err_log(
 					{},
@@ -146,8 +168,10 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt) {
 
 			append(body, qbe.Instr(qbe.CondJump{qbe.Temp(var.temp_name), "true", "end"}))
 			append(body, qbe.Label("true"))
+			ifscope := Scope{scope, {}, {}}
+
 			for ifst in st.body {
-				do_stmt(ifst, body)
+				do_stmt(ifst, body, &ifscope)
 			}
 			append(body, qbe.Label("end"))
 		} else {
