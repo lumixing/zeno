@@ -9,9 +9,12 @@ Func :: struct {
 }
 
 Var :: struct {
-	gid:       int,
-	type:      Type,
-	temp_name: string,
+	gid:  int,
+	type: Type,
+	name: union {
+		qbe.Temp,
+		qbe.Glob,
+	},
 }
 
 Scope :: struct {
@@ -43,6 +46,16 @@ gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
 			}
 
 			func_map[tst.name] = {{}, tst.return_type}
+
+			params: [dynamic]qbe.Param
+			for par in tst.params {
+				#partial switch par.type {
+				case .String:
+					scope.vars[par.name] = {0, .String, qbe.Temp(par.name)}
+					append(&params, qbe.Param{par.name, .Long})
+				}
+			}
+
 			body: [dynamic]qbe.Stmt
 			append(&body, qbe.Label("start"))
 
@@ -56,7 +69,7 @@ gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
 
 			append(&body, qbe.Instr(qbe.Return(tst.name == "main" ? 0 : nil)))
 
-			append(&funcs, qbe.Func{tst.name, return_type, {}, true, body[:]})
+			append(&funcs, qbe.Func{tst.name, return_type, params[:], true, body[:]})
 		case ForeignFuncDeclare:
 			if tst.name in func_map {
 				err_log({}, 0, "%q is already declared as a function.", tst.name)
@@ -102,9 +115,9 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt, scope: ^Scope) {
 				// todo: remove partial!
 				#partial switch var.type {
 				case .Int:
-					append(&args, qbe.Arg{.Word, qbe.Temp(var.temp_name)})
+					append(&args, qbe.Arg{.Word, var_name_to_value(var.name)})
 				case .String:
-					append(&args, qbe.Arg{.Long, qbe.Glob(var.temp_name)})
+					append(&args, qbe.Arg{.Long, var_name_to_value(var.name)})
 				case .Void:
 					fmt.panicf("variable %q has a type of void!", string(arg))
 				}
@@ -126,7 +139,7 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt, scope: ^Scope) {
 
 		defer gid += 1
 		name := fmt.tprintf("%s.%d", st.name, gid)
-		scope.vars[st.name] = {gid, st.type, name}
+		scope.vars[st.name] = {gid, st.type, qbe.Glob(name)}
 
 		type: qbe.Type
 		// todo: remove partial!
@@ -165,7 +178,7 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt, scope: ^Scope) {
 				)
 			}
 
-			append(body, qbe.Instr(qbe.CondJump{qbe.Temp(var.temp_name), "true", "end"}))
+			append(body, qbe.Instr(qbe.CondJump{var_name_to_value(var.name), "true", "end"}))
 			append(body, qbe.Label("true"))
 			ifscope := Scope{scope, {}, {}}
 
@@ -182,6 +195,20 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt, scope: ^Scope) {
 			do_stmt(bst, body, &blockscope)
 		}
 	}
+}
+
+// todo: very stupid, please come up with a better solution!!
+var_name_to_value :: proc(name: union {
+		qbe.Temp,
+		qbe.Glob,
+	}) -> qbe.Value {
+	switch n in name {
+	case qbe.Temp:
+		return qbe.Value(n)
+	case qbe.Glob:
+		return qbe.Value(n)
+	}
+	return {}
 }
 
 type_to_qbe_type :: proc(type: Type) -> Maybe(qbe.Type) {

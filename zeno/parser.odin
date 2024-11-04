@@ -29,7 +29,7 @@ prs_parse :: proc(prs: ^Parser) {
 
 			prs_expect(prs, .LParen)
 			// todo: allow hanging comma
-			if param_name, ok := prs_expect(prs, .Ident).(string); ok {
+			if param_name, ok := prs_expect(prs, .Ident, .Nil).(string); ok {
 				param_type := prs_type(prs).?
 				append(&params, Param{param_name, param_type})
 
