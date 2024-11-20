@@ -70,7 +70,7 @@ gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
 			append(&body, qbe.Instr(qbe.Return(tst.name == "main" ? 0 : nil)))
 
 			append(&funcs, qbe.Func{tst.name, return_type, params[:], true, body[:]})
-		case ForeignFuncDeclare:
+		case ForeignFuncDecl:
 			if tst.name in func_map {
 				// err_log({}, 0, "%q is already declared as a function.", tst.name)
 			}

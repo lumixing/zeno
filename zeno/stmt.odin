@@ -2,7 +2,7 @@ package zeno
 
 TopStmt :: union {
 	FuncDecl,
-	ForeignFuncDeclare,
+	ForeignFuncDecl,
 }
 
 FuncDecl :: struct {
@@ -12,7 +12,7 @@ FuncDecl :: struct {
 	return_type: Type,
 }
 
-ForeignFuncDeclare :: struct {
+ForeignFuncDecl :: struct {
 	name:        string,
 	params:      []Param,
 	return_type: Type,
