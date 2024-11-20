@@ -58,7 +58,7 @@ prs_func_sign :: proc(
 	}
 
 	prs_expect(prs, .RParen) or_return
-	ret_type := prs_type(prs).? or_else .Void
+	ret_type := prs_type_val(prs).? or_else .Void
 
 	return name.(string), params[:], ret_type, nil
 }
@@ -94,7 +94,7 @@ prs_foreign_func_decl :: proc(
 
 prs_param :: proc(prs: ^Parser) -> (param: Param, err: Maybe(Error)) {
 	param_name := prs_expect(prs, .Ident) or_return
-	param_type := prs_type_err(prs) or_return
+	param_type := prs_type(prs) or_return
 
 	return {param_name.(string), param_type}, nil
 }
@@ -119,7 +119,7 @@ prs_stmt :: proc(prs: ^Parser) -> (stmt: Stmt, err: Maybe(Error)) {
 
 prs_var_decl :: proc(prs: ^Parser) -> (stmt: VarDecl, err: Maybe(Error)) {
 	name := prs_expect(prs, .Ident) or_return
-	type := prs_type_err(prs) or_return
+	type := prs_type(prs) or_return
 	prs_expect(prs, .Equals) or_return
 	expr := prs_expr(prs) or_return
 	prs_expect(prs, .Newline)
@@ -133,7 +133,7 @@ prs_func_call :: proc(prs: ^Parser) -> (func_call: FuncCall, err: Maybe(Error)) 
 	prs_expect(prs, .LParen) or_return
 
 	args: [dynamic]Expr
-	if expr, err := prs_expr(prs); err == nil {
+	if expr, cons, err := prs_expr_opt(prs); err == nil {
 		append(&args, expr)
 
 		for prs_peek(prs^).type != .RParen {
@@ -142,10 +142,7 @@ prs_func_call :: proc(prs: ^Parser) -> (func_call: FuncCall, err: Maybe(Error)) 
 			append(&args, expr)
 		}
 	} else {
-		// todo: backtracking using (consumed: int) result
-		// expr, consumed, err := prs_expr(prs)
-		// prs.current -= consumed
-		prs.current -= 1
+		prs.current -= cons
 	}
 
 	prs_expect(prs, .RParen) or_return
@@ -154,9 +151,9 @@ prs_func_call :: proc(prs: ^Parser) -> (func_call: FuncCall, err: Maybe(Error)) 
 	return {name.(string), args[:]}, nil
 }
 
-prs_type :: proc(prs: ^Parser) -> Maybe(Type) {
+prs_type_opt :: proc(prs: ^Parser) -> (type: Type, consumed: int, err: Maybe(Error)) {
+	init_current := prs.current
 	token := prs_consume(prs)
-	type: Maybe(Type)
 
 	#partial switch token.type {
 	case .KW_Void:
@@ -168,38 +165,54 @@ prs_type :: proc(prs: ^Parser) -> Maybe(Type) {
 	case .KW_Bool:
 		type = .Bool
 	case:
-		type = nil
-		prs.current -= 1
+		err = error(token.span, "Expected type but got %v", token.type)
 	}
 
-	return type
+	consumed = prs.current - init_current
+
+	return type, consumed, err
 }
 
-prs_type_err :: proc(prs: ^Parser) -> (Type, Maybe(Error)) {
-	token := prs_peek(prs^)
+prs_type :: proc(prs: ^Parser) -> (_type: Type, err: Maybe(Error)) {
+	type, _ := prs_type_opt(prs) or_return
+	return type, nil
+}
 
-	if type, ok := prs_type(prs).?; ok {
-		return type, nil
+prs_type_val :: proc(prs: ^Parser) -> Maybe(Type) {
+	if type, cons, err := prs_type_opt(prs); err == nil {
+		return type
+	} else {
+		prs.current -= cons
+		return nil
 	}
-
-	return nil, error(token.span, "Expected type but got %v", token.type)
 }
 
-prs_expr :: proc(prs: ^Parser) -> (expr: Expr, err: Maybe(Error)) {
+// todo: consider backtracking in here
+prs_expr_opt :: proc(prs: ^Parser) -> (expr: Expr, consumed: int, err: Maybe(Error)) {
+	init_current := prs.current
 	token := prs_consume(prs)
 
 	#partial switch token.type {
 	case .Ident:
-		return VarIdent(token.value.(string)), nil
+		expr = VarIdent(token.value.(string))
 	case .String:
-		return token.value.(string), nil
+		expr = token.value.(string)
 	case .Int:
-		return token.value.(int), nil
+		expr = token.value.(int)
 	case .Bool:
-		return token.value.(bool), nil
+		expr = token.value.(bool)
+	case:
+		err = error(token.span, "Expected expression but got %v", token.type)
 	}
 
-	return nil, error(token.span, "Expected expression but got %v", token.type)
+	consumed = prs.current - init_current
+
+	return expr, consumed, err
+}
+
+prs_expr :: proc(prs: ^Parser) -> (_expr: Expr, err: Maybe(Error)) {
+	expr, _ := prs_expr_opt(prs) or_return
+	return expr, nil
 }
 
 prs_newline :: proc(prs: ^Parser) {
