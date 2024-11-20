@@ -3,245 +3,149 @@ package zeno
 import "core:fmt"
 
 Parser :: struct {
-	source:    []u8,
 	tokens:    []Token,
 	top_stmts: [dynamic]TopStmt,
 	start:     int,
 	current:   int,
 }
 
-ParseReturn :: enum {
-	Err,
-	Nil,
-}
-
-prs_parse :: proc(prs: ^Parser) {
+prs_parse :: proc(prs: ^Parser) -> Maybe(Error) {
 	for !prs_end(prs^) {
 		prs.start = prs.current
-		token := prs_advance(prs)
+		token := prs_peek(prs^)
 
 		#partial switch token.type {
 		case .Ident:
-			params: [dynamic]Param
-			stmts: [dynamic]Stmt
-
-			ident_name := token.value.(string)
-
-			prs_expect(prs, .LParen)
-			// todo: allow hanging comma
-			if param_name, ok := prs_expect(prs, .Ident, .Nil).(string); ok {
-				param_type := prs_type(prs).?
-				append(&params, Param{param_name, param_type})
-
-				for prs_peek(prs^).type != .RParen {
-					if _, ok := prs_expect(prs, .Comma, .Nil); ok {
-						param_name := prs_expect(prs, .Ident).(string)
-						param_type := prs_type(prs).?
-						append(&params, Param{param_name, param_type})
-					} else {
-						// todo: this
-						panic("todo: give a meaningful error message here!")
-					}
-				}
-			}
-			prs_expect(prs, .RParen)
-
-			ret_type := prs_type(prs, .Nil).? or_else .Void
-
-			prs_expect(prs, .LBrace)
-			prs_ignore_newline(prs)
-			for prs_peek(prs^).type != .RBrace {
-				stmt := prs_stmt(prs).?
-				append(&stmts, stmt)
-				prs_ignore_newline(prs)
-			}
-			prs_expect(prs, .RBrace)
-
-			append(&prs.top_stmts, FuncDeclare{ident_name, params[:], stmts[:], ret_type})
-		case .Directive:
-			switch token.value.(Directive) {
-			case .Foreign:
-				params: [dynamic]Param
-
-				func_name := prs_expect(prs, .Ident).(string)
-
-				prs_expect(prs, .LParen)
-				if param_type, ok := prs_type(prs, .Nil).?; ok {
-					append(&params, Param{"", param_type})
-
-					for prs_peek(prs^).type != .RParen {
-						if _, ok := prs_expect(prs, .Comma, .Nil); ok {
-							param_type := prs_type(prs).?
-							append(&params, Param{"", param_type})
-						} else {
-							// todo: this
-							panic("todo: give a meaningful error message here!")
-						}
-					}
-				}
-				prs_expect(prs, .RParen)
-
-				ret_type := prs_type(prs, .Nil).? or_else .Void
-
-				prs_expect(prs, .Newline)
-
-				append(&prs.top_stmts, ForeignFuncDeclare{func_name, params[:], ret_type})
-			}
+			tstmt := prs_func_decl(prs) or_return
+			append(&prs.top_stmts, tstmt)
+		case .Newline, .EOF:
+			prs.current += 1
+		case:
+			return error(token.span, "Expected top statement but got %v", token.type)
 		}
 	}
+
+	return nil
 }
 
-prs_stmt :: proc(prs: ^Parser, prs_ret: ParseReturn = .Err) -> Maybe(Stmt) {
-	token := prs_advance(prs)
+prs_func_decl :: proc(prs: ^Parser) -> (func_decl: FuncDecl, err: Maybe(Error)) {
+	name := prs_expect(prs, .Ident) or_return
+	prs_expect(prs, .LParen) or_return
+	prs_expect(prs, .RParen) or_return
+	type := prs_type(prs).? or_else .Void
+	prs_expect(prs, .LBrace) or_return
+	prs_newline(prs)
+
+	stmts: [dynamic]Stmt
+	for prs_peek(prs^).type != .RBrace {
+		stmt := prs_stmt(prs) or_return
+		append(&stmts, stmt)
+	}
+
+	prs_expect(prs, .RBrace) or_return
+
+	return {name.(string), {}, stmts[:], type}, nil
+}
+
+prs_stmt :: proc(prs: ^Parser) -> (stmt: Stmt, err: Maybe(Error)) {
+	token := prs_peek(prs^)
+
 	#partial switch token.type {
 	case .Ident:
-		ident_name := token.value.(string)
-
-		if var_type, ok := prs_type(prs, .Nil).?; ok {
-			prs_expect(prs, .Equals)
-			var_value := prs_expr(prs).?
-
-			// todo: allow also RBrace
-			prs_expect(prs, .Newline)
-
-			return VarDecl{ident_name, var_type, var_value}
-		} else if _, ok := prs_expect(prs, .LParen, .Nil); ok {
-			args: [dynamic]Expr
-
-			if arg, ok := prs_expr(prs, .Nil).?; ok {
-				append(&args, arg)
-
-				for prs_peek(prs^).type != .RParen {
-					if _, ok := prs_expect(prs, .Comma, .Nil); ok {
-						arg := prs_expr(prs).?
-						append(&args, arg)
-					} else {
-						// todo: this
-						panic("todo: give a meaningful error message here!")
-					}
-				}
-			}
-			prs_expect(prs, .RParen)
-
-			return FuncCall{ident_name, args[:]}
-		} else {
-			err_log(prs.source, token.span.lo, "expected Type or LParen but got %v", token.type)
-		}
-	case .KW_If:
-		body: [dynamic]Stmt
-		cond := prs_expr(prs).?
-		prs_expect(prs, .LBrace)
-		prs_ignore_newline(prs)
-		for prs_peek(prs^).type != .RBrace {
-			stmt := prs_stmt(prs).?
-			append(&body, stmt)
-			prs_ignore_newline(prs)
-		}
-		prs_expect(prs, .RBrace)
-
-		return IfBranch{cond, body[:]}
-	case .LBrace:
-		stmts: [dynamic]Stmt
-		prs_ignore_newline(prs)
-		for prs_peek(prs^).type != .RBrace {
-			stmt := prs_stmt(prs).?
-			append(&stmts, stmt)
-			prs_ignore_newline(prs)
-		}
-		prs_expect(prs, .RBrace)
-
-		return Block(stmts[:])
-	case:
-		if prs_ret == .Err {
-			err_log(prs.source, token.span.lo, "expected a statement but got %v", token.type)
-		} else {
-			prs.current -= 1
-			return nil
-		}
+		stmt := prs_var_decl(prs) or_return
+		return stmt, nil
 	}
+
+	return nil, error(token.span, "Expected statement but got %v", token.type)
 }
 
-prs_expr :: proc(prs: ^Parser, prs_ret: ParseReturn = .Err) -> Maybe(Expr) {
-	token := prs_advance(prs)
+prs_var_decl :: proc(prs: ^Parser) -> (stmt: VarDecl, err: Maybe(Error)) {
+	name := prs_expect(prs, .Ident) or_return
+	type := prs_type_err(prs) or_return
+	prs_expect(prs, .Equals) or_return
+	str := prs_expect(prs, .String) or_return
+	prs_expect(prs, .Newline)
+	prs_newline(prs)
+
+	return {name.(string), type, str.(string)}, nil
+}
+
+prs_type :: proc(prs: ^Parser) -> Maybe(Type) {
+	token := prs_consume(prs)
+	type: Maybe(Type)
+
 	#partial switch token.type {
-	case .String:
-		return token.value.(string)
-	case .Int:
-		return token.value.(int)
-	case .Bool:
-		return token.value.(bool)
-	case .Ident:
-		return VarIdent(token.value.(string))
+	case .KW_Void:
+		type = .Void
+	case .KW_Str:
+		type = .String
+	case .KW_Int:
+		type = .Int
+	case .KW_Bool:
+		type = .Bool
 	case:
-		if prs_ret == .Err {
-			err_log(prs.source, token.span.lo, "expected an expression but got %v", token.type)
-		} else {
-			prs.current -= 1
-			return nil
-		}
+		type = nil
+		prs.current -= 1
 	}
+
+	return type
 }
 
-// todo: error prone, might forget to put somewhere, find other solution
-prs_ignore_newline :: proc(prs: ^Parser) {
+prs_type_err :: proc(prs: ^Parser) -> (Type, Maybe(Error)) {
+	token := prs_peek(prs^)
+
+	if type, ok := prs_type(prs).?; ok {
+		return type, nil
+	}
+
+	return nil, error(token.span, "Expected type but got %v", token.type)
+}
+
+prs_newline :: proc(prs: ^Parser) {
 	for prs_peek(prs^).type == .Newline {
 		prs.current += 1
 	}
 }
 
-prs_expect :: proc(
-	prs: ^Parser,
-	tk_type: TokenType,
-	prs_ret: ParseReturn = .Err,
-) -> (
-	value: TokenValue,
-	ok: bool,
-) #optional_ok {
-	if token := prs_advance(prs); token.type == tk_type {
-		return token.value, true
-	} else {
-		if prs_ret == .Err {
-			err_log(prs.source, token.span.lo, "expected %v but got %v", tk_type, token.type)
-		} else {
-			prs.current -= 1
-			return nil, false
-		}
+prs_expect :: proc(prs: ^Parser, type: TokenType) -> (TokenValue, Maybe(Error)) {
+	token := prs_consume(prs)
+
+	if token.type == type {
+		return token.value, nil
 	}
+
+	return nil, error(token.span, "Expected %v but got %v", type, token.type)
 }
 
-prs_type :: proc(prs: ^Parser, prs_ret: ParseReturn = .Err) -> Maybe(Type) {
-	token := prs_advance(prs)
-	#partial switch token.type {
-	case .KW_Int:
-		return .Int
-	case .KW_Str:
-		return .String
-	case .KW_Bool:
-		return .Bool
-	case .KW_Void:
-		return .Void
-	case:
-		if prs_ret == .Err {
-			err_log(prs.source, token.span.lo, "expected a type but got %v", token.type)
-		} else {
-			prs.current -= 1
-			return nil
-		}
+prs_consume :: proc(prs: ^Parser, loc := #caller_location) -> Token {
+	if prs_end(prs^) {
+		fmt.panicf(
+			"Tried to consume while parsing ended (%d~%d, %d) (%v)",
+			prs.start,
+			prs.current,
+			len(prs.tokens),
+			loc,
+		)
 	}
-}
 
-prs_end :: proc(prs: Parser) -> bool {
-	return prs.current >= len(prs.tokens)
-}
-
-prs_advance :: proc(prs: ^Parser) -> Token {
 	defer prs.current += 1
 	return prs_peek(prs^)
 }
 
-prs_peek :: proc(prs: Parser) -> Token {
+prs_peek :: proc(prs: Parser, loc := #caller_location) -> Token {
 	if prs_end(prs) {
-		return {}
+		fmt.panicf(
+			"Tried to peek while parsing ended (%d~%d, %d) (%v)",
+			prs.start,
+			prs.current,
+			len(prs.tokens),
+			loc,
+		)
 	}
+
 	return prs.tokens[prs.current]
+}
+
+prs_end :: proc(prs: Parser) -> bool {
+	return prs.current >= len(prs.tokens)
 }

@@ -10,6 +10,7 @@ import "core:strings"
 Subcmd :: enum {
 	run,
 	build,
+	parse,
 }
 
 Options :: struct {
@@ -33,7 +34,11 @@ main :: proc() {
 	}
 
 	lexer.source = data
-	lexer_scan(lexer)
+	err := lexer_scan(lexer)
+	if err, ok := err.?; ok {
+		fmt.printfln("Lexer error at %v:%v: %v", get_line_col(data, err.location.lo), err.message)
+		os.exit(1)
+	}
 
 	if opt.print_tokens {
 		for token in lexer.tokens {
@@ -46,14 +51,22 @@ main :: proc() {
 	}
 
 	parser := new(Parser)
-	parser.source = data
+	// parser.source = data
 	parser.tokens = lexer.tokens[:]
-	prs_parse(parser)
+	err = prs_parse(parser)
+	if err, ok := err.?; ok {
+		fmt.printfln("Parse error at %v:%v: %v", get_line_col(data, err.location.lo), err.message)
+		os.exit(1)
+	}
 
 	if opt.print_stmts {
 		for top_stmt in parser.top_stmts {
 			fmt.printfln("%#v", top_stmt)
 		}
+	}
+
+	if opt.subcmd == .parse {
+		return
 	}
 
 	datas, funcs := gen_qbe(parser.top_stmts[:])

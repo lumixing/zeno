@@ -1,11 +1,11 @@
 package zeno
 
 TopStmt :: union {
-	FuncDeclare,
+	FuncDecl,
 	ForeignFuncDeclare,
 }
 
-FuncDeclare :: struct {
+FuncDecl :: struct {
 	name:        string,
 	params:      []Param,
 	body:        []Stmt,
