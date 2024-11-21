@@ -22,6 +22,7 @@ TokenType :: enum {
 	RBrace,
 	Equals,
 	Comma,
+	DotDot,
 
 	// literals
 	String,
@@ -33,7 +34,9 @@ TokenType :: enum {
 	KW_Str,
 	KW_Void,
 	KW_Bool,
+	KW_Any,
 	KW_If,
+	KW_Return,
 }
 
 TokenValue :: union {

@@ -35,6 +35,12 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 			} else {
 				return Error{"Expected another slash for a comment", lexer_span(lexer^)}
 			}
+		case '.':
+			if lexer_advance(lexer) == '.' {
+				lexer_add(lexer, .DotDot)
+			} else {
+				return Error{"Expected another dot", lexer_span(lexer^)}
+			}
 		case '(':
 			lexer_add(lexer, .LParen)
 		case ')':
@@ -105,12 +111,16 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 					lexer_add(lexer, .KW_Void)
 				case "bool":
 					lexer_add(lexer, .KW_Bool)
+				case "any":
+					lexer_add(lexer, .KW_Any)
 				case "true":
 					lexer_add(lexer, .Bool, true)
 				case "false":
 					lexer_add(lexer, .Bool, false)
 				case "if":
 					lexer_add(lexer, .KW_If)
+				case "return":
+					lexer_add(lexer, .KW_Return)
 				case:
 					lexer_add(lexer, .Ident, ident)
 				}

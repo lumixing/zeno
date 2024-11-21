@@ -47,12 +47,22 @@ prs_func_sign :: proc(
 
 	params: [dynamic]Param
 	if prs_peek(prs^).type == .Ident {
+		has_variadic := false
 		param := prs_param(prs) or_return
 		append(&params, param)
 
 		for prs_peek(prs^).type != .RParen {
 			prs_expect(prs, .Comma) or_return
 			param := prs_param(prs) or_return
+			if has_variadic {
+				return "", nil, nil, error(
+					{},
+					"Function cannot have any parameters after variadic one",
+				)
+			}
+			if !has_variadic && param.variadic {
+				has_variadic = true
+			}
 			append(&params, param)
 		}
 	}
@@ -94,9 +104,16 @@ prs_foreign_func_decl :: proc(
 
 prs_param :: proc(prs: ^Parser) -> (param: Param, err: Maybe(Error)) {
 	param_name := prs_expect(prs, .Ident) or_return
+
+	variadic := false
+	if prs_peek(prs^).type == .DotDot {
+		prs.current += 1
+		variadic = true
+	}
+
 	param_type := prs_type(prs) or_return
 
-	return {param_name.(string), param_type}, nil
+	return {param_name.(string), param_type, variadic}, nil
 }
 
 prs_stmt :: proc(prs: ^Parser) -> (stmt: Stmt, err: Maybe(Error)) {
@@ -112,9 +129,25 @@ prs_stmt :: proc(prs: ^Parser) -> (stmt: Stmt, err: Maybe(Error)) {
 		}
 		stmt := prs_var_decl(prs) or_return
 		return stmt, nil
+	case .KW_Return:
+		stmt := prs_return(prs) or_return
+		return stmt, nil
 	}
 
 	return nil, error(token.span, "Expected statement but got %v", token.type)
+}
+
+prs_return :: proc(prs: ^Parser) -> (stmt: Return, err: Maybe(Error)) {
+	prs_expect(prs, .KW_Return) or_return
+	value: Maybe(Expr)
+	if expr, cons, err := prs_expr_opt(prs); err == nil {
+		value = expr
+	} else {
+		prs.current -= cons
+	}
+	prs_newline(prs)
+
+	return Return(value), nil
 }
 
 prs_var_decl :: proc(prs: ^Parser) -> (stmt: VarDecl, err: Maybe(Error)) {
@@ -164,6 +197,8 @@ prs_type_opt :: proc(prs: ^Parser) -> (type: Type, consumed: int, err: Maybe(Err
 		type = .Int
 	case .KW_Bool:
 		type = .Bool
+	case .KW_Any:
+		type = .Any
 	case:
 		err = error(token.span, "Expected type but got %v", token.type)
 	}

@@ -84,7 +84,7 @@ gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
 }
 
 do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt, scope: ^Scope) {
-	switch st in stmt {
+	#partial switch st in stmt {
 	case FuncCall:
 		// todo: type checking for args
 		if st.name not_in func_map {
@@ -143,7 +143,7 @@ do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt, scope: ^Scope) {
 
 		type: qbe.Type
 		// todo: remove partial!
-		switch st.type {
+		#partial switch st.type {
 		case .Int:
 			defer gid += 1
 			name := fmt.tprintf("%s.%d", st.name, gid)
@@ -212,7 +212,7 @@ var_name_to_value :: proc(name: union {
 }
 
 type_to_qbe_type :: proc(type: Type) -> Maybe(qbe.Type) {
-	switch type {
+	#partial switch type {
 	case .Int, .Bool:
 		return .Word
 	case .String:

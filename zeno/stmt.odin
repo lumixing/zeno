@@ -19,8 +19,9 @@ ForeignFuncDecl :: struct {
 }
 
 Param :: struct {
-	name: string,
-	type: Type,
+	name:     string,
+	type:     Type,
+	variadic: bool,
 }
 
 Stmt :: union {
@@ -28,6 +29,7 @@ Stmt :: union {
 	VarDecl,
 	IfBranch,
 	Block,
+	Return,
 }
 
 FuncCall :: struct {
@@ -48,6 +50,8 @@ IfBranch :: struct {
 
 Block :: distinct []Stmt
 
+Return :: distinct Maybe(Expr)
+
 VarIdent :: distinct string
 
 Expr :: union {
@@ -62,4 +66,5 @@ Type :: enum {
 	Int,
 	String,
 	Bool,
+	Any,
 }
