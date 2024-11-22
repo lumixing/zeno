@@ -53,3 +53,7 @@ Directive :: enum {
 Span :: struct {
 	lo, hi: int,
 }
+
+span :: proc(lo: int) -> Span {
+	return {lo, lo}
+}

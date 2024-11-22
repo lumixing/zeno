@@ -1,21 +1,29 @@
 package zeno
 
+Spanned :: struct($T: typeid) {
+	span:  Span,
+	value: T,
+}
+
 TopStmt :: union {
-	FuncDecl,
+	FuncDef,
 	ForeignFuncDecl,
 }
 
-FuncDecl :: struct {
+FuncSign :: struct {
 	name:        string,
 	params:      []Param,
-	body:        []Stmt,
 	return_type: Type,
 }
 
+FuncDef :: struct {
+	sign: FuncSign,
+	// add Body :: []Spanned(Stmts)
+	body: []Spanned(Stmt),
+}
+
 ForeignFuncDecl :: struct {
-	name:        string,
-	params:      []Param,
-	return_type: Type,
+	sign: FuncSign,
 }
 
 Param :: struct {
@@ -24,47 +32,29 @@ Param :: struct {
 	variadic: bool,
 }
 
+Type :: enum {
+	Void,
+	String,
+	Int,
+	Bool,
+	Any,
+}
+
 Stmt :: union {
-	FuncCall,
-	VarDecl,
-	IfBranch,
-	Block,
-	Return,
+	VarDef,
 }
 
-FuncCall :: struct {
-	name: string,
-	args: []Expr,
-}
-
-VarDecl :: struct {
+VarDef :: struct {
 	name:  string,
 	type:  Type,
 	value: Expr,
 }
 
-IfBranch :: struct {
-	cond: Expr,
-	body: []Stmt,
-}
-
-Block :: distinct []Stmt
-
-Return :: distinct Maybe(Expr)
-
-VarIdent :: distinct string
-
 Expr :: union {
-	VarIdent,
 	string,
 	int,
 	bool,
+	Ident,
 }
 
-Type :: enum {
-	Void,
-	Int,
-	String,
-	Bool,
-	Any,
-}
+Ident :: distinct string

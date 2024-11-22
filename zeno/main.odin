@@ -69,10 +69,10 @@ main :: proc() {
 		return
 	}
 
-	datas, funcs := gen_qbe(parser.top_stmts[:])
+	// datas, funcs := gen_qbe(parser.top_stmts[:])
 	// lines_str := strings.join(lines, "")
-	qbestr := qbe.bake(datas, funcs)
-	os.write_entire_file("samples/out.ssa", transmute([]u8)qbestr)
+	// qbestr := qbe.bake(datas, funcs)
+	// os.write_entire_file("samples/out.ssa", transmute([]u8)qbestr)
 
 	if opt.subcmd == .run {
 		fmt.println("finished compiling! running...")
