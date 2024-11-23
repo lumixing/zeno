@@ -26,6 +26,11 @@ prs_top_stmt :: proc(prs: ^Parser) -> (top_stmt: Maybe(Spanned(TopStmt)), err: M
 	#partial switch token.type {
 	case .Ident:
 		top_stmt = prs_func_def(prs) or_return
+	case .Directive:
+		switch token.value.(Directive) {
+		case .Foreign:
+			top_stmt = prs_foreign_dir(prs) or_return
+		}
 	case .EOF, .Newline:
 		prs.current += 1
 		top_stmt = nil
@@ -37,7 +42,7 @@ prs_top_stmt :: proc(prs: ^Parser) -> (top_stmt: Maybe(Spanned(TopStmt)), err: M
 }
 
 prs_func_sign :: proc(prs: ^Parser) -> (func_sign: FuncSign, err: Maybe(Error)) {
-	span_lo := prs.current
+	span := prs_peek(prs^).span
 
 	name := prs_expect(prs, .Ident) or_return
 	prs_expect(prs, .LParen) or_return
@@ -54,10 +59,7 @@ prs_func_sign :: proc(prs: ^Parser) -> (func_sign: FuncSign, err: Maybe(Error)) 
 
 			if has_variadic {
 				// todo: add span!
-				err = error(
-					span(span_lo),
-					"Function cannot have any parameters after variadic one",
-				)
+				err = error(span, "Function cannot have any parameters after variadic one")
 				return
 			}
 
@@ -89,13 +91,25 @@ prs_func_sign :: proc(prs: ^Parser) -> (func_sign: FuncSign, err: Maybe(Error)) 
 }
 
 prs_func_def :: proc(prs: ^Parser) -> (func_def: Spanned(TopStmt), err: Maybe(Error)) {
-	span_lo := prs.current
+	span := prs_peek(prs^).span
 
 	sign := prs_func_sign(prs) or_return
 	body := prs_block(prs) or_return
 
-	func_def.span = span(span_lo)
+	func_def.span = span
 	func_def.value = FuncDef{sign, body}
+	return
+}
+
+prs_foreign_dir :: proc(prs: ^Parser) -> (foreign_dir: Spanned(TopStmt), err: Maybe(Error)) {
+	span := prs_peek(prs^).span
+
+	prs_expect(prs, .Directive) or_return
+	sign := prs_func_sign(prs) or_return
+	prs_expect(prs, .Newline) or_return
+
+	foreign_dir.span = span
+	foreign_dir.value = ForeignFuncDecl{sign}
 	return
 }
 
@@ -132,14 +146,14 @@ prs_stmt :: proc(prs: ^Parser) -> (stmt: Spanned(Stmt), err: Maybe(Error)) {
 }
 
 prs_var_def :: proc(prs: ^Parser) -> (var_def: Spanned(Stmt), err: Maybe(Error)) {
-	span_lo := prs.current
+	span := prs_peek(prs^).span
 
 	name := prs_expect(prs, .Ident) or_return
 	type := prs_type(prs) or_return
 	prs_expect(prs, .Equals) or_return
 	value := prs_expr(prs) or_return
 
-	var_def.span = span(span_lo)
+	var_def.span = span
 	var_def.value = VarDef{name.(string), type, value}
 	return
 }
