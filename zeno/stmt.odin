@@ -18,9 +18,10 @@ FuncSign :: struct {
 
 FuncDef :: struct {
 	sign: FuncSign,
-	// add Body :: []Spanned(Stmts)
-	body: []Spanned(Stmt),
+	body: Block,
 }
+
+Block :: []Spanned(Stmt)
 
 ForeignFuncDecl :: struct {
 	sign: FuncSign,

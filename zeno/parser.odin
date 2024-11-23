@@ -12,32 +12,39 @@ Parser :: struct {
 prs_parse :: proc(prs: ^Parser) -> (err: Maybe(Error)) {
 	for !prs_end(prs^) {
 		prs.start = prs.current
-		top_stmt := prs_top_stmt(prs) or_return
+		top_stmt_maybe := prs_top_stmt(prs) or_return
+		top_stmt := top_stmt_maybe.? or_continue
 		append(&prs.top_stmts, top_stmt)
 	}
 
 	return
 }
 
-prs_top_stmt :: proc(prs: ^Parser) -> (top_stmt: Spanned(TopStmt), err: Maybe(Error)) {
+prs_top_stmt :: proc(prs: ^Parser) -> (top_stmt: Maybe(Spanned(TopStmt)), err: Maybe(Error)) {
 	token := prs_peek(prs^)
 
 	#partial switch token.type {
 	case .Ident:
 		top_stmt = prs_func_def(prs) or_return
+	case .EOF, .Newline:
+		prs.current += 1
+		top_stmt = nil
+	case:
+		err = error(token.span, "Expected top statement but got %v", token.type)
 	}
 
 	return
 }
 
 prs_func_sign :: proc(prs: ^Parser) -> (func_sign: FuncSign, err: Maybe(Error)) {
+	span_lo := prs.current
+
 	name := prs_expect(prs, .Ident) or_return
 	prs_expect(prs, .LParen) or_return
 
 	params: [dynamic]Param
-	// fatal: needs backtracking!!! im goin insane bye bye
 	param, param_err := prs_param(prs)
-	if param_err == nil {
+	if param_err, param_err_ok := param_err.?; !param_err_ok {
 		append(&params, param)
 		has_variadic := false
 
@@ -47,7 +54,11 @@ prs_func_sign :: proc(prs: ^Parser) -> (func_sign: FuncSign, err: Maybe(Error)) 
 
 			if has_variadic {
 				// todo: add span!
-				return {}, error({}, "Function cannot have any parameters after variadic one")
+				err = error(
+					span(span_lo),
+					"Function cannot have any parameters after variadic one",
+				)
+				return
 			}
 
 			if param.variadic {
@@ -56,13 +67,20 @@ prs_func_sign :: proc(prs: ^Parser) -> (func_sign: FuncSign, err: Maybe(Error)) 
 
 			append(&params, param)
 		}
+	} else {
+		prs.current -= param_err.consumed
+		// todo: error is not correct!
+		// there should be an error for the first error (ignore since optional)
+		// and for the other errors (param error) but thats too complicated!!
+		// err = param_err
+		// return
 	}
 
 	prs_expect(prs, .RParen) or_return
 
 	ret_type, ret_type_err := prs_type(prs)
-	if ret_type_err != err {
-		// fatal: backtrack consumed!
+	if ret_type_err, ret_type_err_ok := ret_type_err.?; ret_type_err_ok {
+		prs.current -= ret_type_err.consumed
 		ret_type = .Void
 	}
 
@@ -146,7 +164,15 @@ prs_expr :: proc(prs: ^Parser) -> (expr: Expr, err: Maybe(Error)) {
 }
 
 prs_param :: proc(prs: ^Parser) -> (param: Param, err: Maybe(Error)) {
-	name := prs_expect(prs, .Ident) or_return
+	init_current := prs.current
+
+	// name := prs_expect(prs, .Ident) or_return
+	name, name_err := prs_expect(prs, .Ident)
+	if name_err, name_err_ok := name_err.?; name_err_ok {
+		name_err.consumed = prs.current - init_current
+		err = name_err
+		return
+	}
 
 	variadic := false
 	if prs_peek(prs^).type == .DotDot {
@@ -154,13 +180,20 @@ prs_param :: proc(prs: ^Parser) -> (param: Param, err: Maybe(Error)) {
 		variadic = true
 	}
 
-	type := prs_type(prs) or_return
+	// type := prs_type(prs) or_return
+	type, type_err := prs_type(prs)
+	if type_err, type_err_ok := type_err.?; type_err_ok {
+		type_err.consumed = prs.current - init_current
+		err = type_err
+		return
+	}
 
 	param = {name.(string), type, variadic}
 	return
 }
 
 prs_type :: proc(prs: ^Parser) -> (type: Type, err: Maybe(Error)) {
+	init_current := prs.current
 	token := prs_consume(prs)
 
 	#partial switch token.type {
@@ -175,7 +208,8 @@ prs_type :: proc(prs: ^Parser) -> (type: Type, err: Maybe(Error)) {
 	case .KW_Any:
 		type = .Any
 	case:
-		err = error(token.span, "Expected type but got %v", token.type)
+		cons := prs.current - init_current
+		err = error(token.span, "Expected type but got %v", token.type, consumed = cons)
 	}
 
 	return

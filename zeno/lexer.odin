@@ -33,13 +33,13 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 					lexer.current += 1
 				}
 			} else {
-				return Error{"Expected another slash for a comment", lexer_span(lexer^)}
+				return error(lexer_span(lexer^), "Expected another slash for a comment")
 			}
 		case '.':
 			if lexer_advance(lexer) == '.' {
 				lexer_add(lexer, .DotDot)
 			} else {
-				return Error{"Expected another dot", lexer_span(lexer^)}
+				return error(lexer_span(lexer^), "Expected another dot")
 			}
 		case '(':
 			lexer_add(lexer, .LParen)
@@ -68,7 +68,7 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 						lexer.current += 1
 						append(&str, '\n')
 					} else {
-						return Error{"Invalid escape character", lexer_span(lexer^)}
+						return error(lexer_span(lexer^), "Invalid character escape")
 					}
 					continue
 				}
@@ -77,7 +77,7 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 			}
 
 			if !terminated {
-				return Error{"Unterminated string", lexer_span(lexer^)}
+				return error(lexer_span(lexer^), "Unterminated string")
 			}
 
 			lexer.current += 1
@@ -93,7 +93,7 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 			case "foreign":
 				lexer_add(lexer, .Directive, Directive.Foreign)
 			case:
-				return Error{"Invalid directive", lexer_span(lexer^)}
+				return error(lexer_span(lexer^), "Invalid directive")
 			}
 		case:
 			if is_ident_char(char) {
@@ -132,11 +132,11 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 				str := string(lexer.source[lexer.start:lexer.current])
 				int_value, ok := strconv.parse_int(str)
 				if !ok {
-					return Error{"Could not parse int", lexer_span(lexer^)}
+					return error(lexer_span(lexer^), "Could not parse int")
 				}
 				lexer_add(lexer, .Int, int_value)
 			} else {
-				return Error{"Invalid character", lexer_span(lexer^)}
+				return error(lexer_span(lexer^), "Invalid character: %c (%d)", char, char)
 			}
 		}
 	}

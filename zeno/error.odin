@@ -6,10 +6,11 @@ import "core:os"
 Error :: struct {
 	message:  string,
 	location: Span,
+	consumed: int,
 }
 
-error :: proc(span: Span, fmtstr: string, args: ..any) -> Error {
-	return {fmt.tprintf(fmtstr, ..args), span}
+error :: proc(span: Span, fmtstr: string, args: ..any, consumed := 0) -> Error {
+	return {fmt.tprintf(fmtstr, ..args), span, consumed}
 }
 
 get_line_col :: proc(src: []u8, lo: int) -> (line, col: int) {
