@@ -135,6 +135,8 @@ prs_stmt :: proc(prs: ^Parser) -> (stmt: Spanned(Stmt), err: Maybe(Error)) {
 	#partial switch token.type {
 	case .Ident:
 		stmt = prs_var_def(prs) or_return
+	case .KW_Return:
+		stmt = prs_return(prs) or_return
 	case:
 		err = error(token.span, "Expected statement but got %v", token.type)
 	}
@@ -158,7 +160,24 @@ prs_var_def :: proc(prs: ^Parser) -> (var_def: Spanned(Stmt), err: Maybe(Error))
 	return
 }
 
+prs_return :: proc(prs: ^Parser) -> (ret: Spanned(Stmt), err: Maybe(Error)) {
+	span := prs_peek(prs^).span
+
+	prs_expect(prs, .KW_Return) or_return
+
+	expr, expr_err := prs_expr(prs)
+	if expr_err, expr_err_ok := expr_err.?; expr_err_ok {
+		prs.current -= expr_err.consumed
+		expr = nil
+	}
+
+	ret.span = span
+	ret.value = Return{expr}
+	return
+}
+
 prs_expr :: proc(prs: ^Parser) -> (expr: Expr, err: Maybe(Error)) {
+	init_current := prs.current
 	token := prs_consume(prs)
 
 	#partial switch token.type {
@@ -171,7 +190,8 @@ prs_expr :: proc(prs: ^Parser) -> (expr: Expr, err: Maybe(Error)) {
 	case .Bool:
 		expr = token.value.(bool)
 	case:
-		err = error(token.span, "Expected expression but got %v", token.type)
+		cons := prs.current - init_current
+		err = error(token.span, "Expected expression but got %v", token.type, consumed = cons)
 	}
 
 	return

@@ -43,12 +43,17 @@ Type :: enum {
 
 Stmt :: union {
 	VarDef,
+	Return,
 }
 
 VarDef :: struct {
 	name:  string,
 	type:  Type,
 	value: Expr,
+}
+
+Return :: struct {
+	value: Maybe(Expr),
 }
 
 Expr :: union {
