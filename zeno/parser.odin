@@ -51,6 +51,7 @@ prs_func_sign :: proc(prs: ^Parser) -> (func_sign: FuncSign, err: Maybe(Error)) 
 	param, param_err := prs_param(prs)
 	if param_err, param_err_ok := param_err.?; !param_err_ok {
 		append(&params, param)
+		// todo: not handled for first parameter variadic
 		has_variadic := false
 
 		for prs_peek(prs^).type != .RParen {
