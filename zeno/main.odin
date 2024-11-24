@@ -11,6 +11,7 @@ Subcmd :: enum {
 	run,
 	build,
 	parse,
+	qbe,
 }
 
 Options :: struct {
@@ -69,10 +70,14 @@ main :: proc() {
 		return
 	}
 
-	// datas, funcs := gen_qbe(parser.top_stmts[:])
-	// lines_str := strings.join(lines, "")
-	// qbestr := qbe.bake(datas, funcs)
-	// os.write_entire_file("samples/out.ssa", transmute([]u8)qbestr)
+	out, qbe_err := gen_qbe(parser.top_stmts[:])
+	if err, ok := qbe_err.?; ok {
+		fmt.printfln("Error at %v:%v: %v", get_line_col(data, err.location.lo), err.message)
+		os.exit(1)
+	}
+
+	qbestr := qbe.bake(out.datas[:], out.funcs[:])
+	os.write_entire_file("samples/out.ssa", transmute([]u8)qbestr)
 
 	if opt.subcmd == .run {
 		fmt.println("finished compiling! running...")
