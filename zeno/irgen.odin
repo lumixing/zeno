@@ -12,17 +12,30 @@ Func :: struct {
 	is_foreign: bool,
 }
 
+Var :: struct {
+	name: string,
+	type: Type,
+}
+
 Funcs :: map[string]Func
+Vars :: map[string]Var
+
+Scope :: struct {
+	parent:   Maybe(^Scope),
+	children: [dynamic]^Scope,
+	vars:     Vars,
+}
 
 gen_qbe :: proc(top_stmts: []Spanned(TopStmt)) -> (out: QbeOut, err: Maybe(Error)) {
 	funcs: Funcs
+	global_scope: Scope
 
 	for span_tstmt in top_stmts {
 		switch tstmt in span_tstmt.value {
 		case ForeignFuncDecl:
 			gen_foreign_func_decl(span_tstmt, &funcs) or_return
 		case FuncDef:
-			gen_func_def(span_tstmt, &funcs, &out) or_return
+			gen_func_def(span_tstmt, &funcs, &out, &global_scope) or_return
 		}
 	}
 
@@ -43,14 +56,20 @@ gen_func_def :: proc(
 	span_tstmt: Spanned(TopStmt),
 	funcs: ^Funcs,
 	out: ^QbeOut,
+	global_scope: ^Scope,
 ) -> (
 	err: Maybe(Error),
 ) {
 	tstmt := span_tstmt.value.(FuncDef)
 
 	gen_check_name_in_funcs(tstmt.sign.name, funcs^, span_tstmt.span) or_return
+	// todo: check in scope aswell
 
 	funcs[tstmt.sign.name] = Func{tstmt.sign, false}
+
+	scope: Scope
+	scope.parent = global_scope
+	// add scope to global_scope children?
 
 	func: qbe.Func
 	func.name = tstmt.sign.name
@@ -58,6 +77,11 @@ gen_func_def :: proc(
 
 	params: [dynamic]qbe.Param
 	for param in tstmt.sign.params {
+		gen_check_name_in_scope(param.name, scope, span_tstmt.span) or_return
+		gen_check_name_in_funcs(param.name, funcs^, span_tstmt.span) or_return
+
+		scope.vars[param.name] = Var{param.name, param.type}
+
 		append(&params, qbe.Param{param.name, gen_type(param.type)})
 	}
 	func.params = params[:]
@@ -71,7 +95,16 @@ gen_func_def :: proc(
 
 gen_check_name_in_funcs :: proc(name: string, funcs: Funcs, span: Span) -> (err: Maybe(Error)) {
 	if name in funcs {
-		err = error(span, "Function %q is already declared as a function", name)
+		err = error(span, "%q is already declared as a function", name)
+	}
+
+	return
+}
+
+gen_check_name_in_scope :: proc(name: string, scope: Scope, span: Span) -> (err: Maybe(Error)) {
+	// todo: recursive for parent
+	if name in scope.vars {
+		err = error(span, "%q is already declared as a variable", name)
 	}
 
 	return
