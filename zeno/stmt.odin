@@ -43,6 +43,7 @@ Type :: enum {
 
 Stmt :: union {
 	VarDef,
+	FuncCall,
 	Return,
 }
 
@@ -50,6 +51,11 @@ VarDef :: struct {
 	name:  string,
 	type:  Type,
 	value: Expr,
+}
+
+FuncCall :: struct {
+	name: string,
+	args: []Expr,
 }
 
 Return :: struct {

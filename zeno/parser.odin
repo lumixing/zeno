@@ -135,7 +135,12 @@ prs_stmt :: proc(prs: ^Parser) -> (stmt: Spanned(Stmt), err: Maybe(Error)) {
 
 	#partial switch token.type {
 	case .Ident:
-		stmt = prs_var_def(prs) or_return
+		#partial switch prs_peek(prs^, 1).type {
+		case .LParen:
+			stmt = prs_func_call(prs) or_return
+		case:
+			stmt = prs_var_def(prs) or_return
+		}
 	case .KW_Return:
 		stmt = prs_return(prs) or_return
 	case:
@@ -158,6 +163,37 @@ prs_var_def :: proc(prs: ^Parser) -> (var_def: Spanned(Stmt), err: Maybe(Error))
 
 	var_def.span = span
 	var_def.value = VarDef{name.(string), type, value}
+	return
+}
+
+prs_func_call :: proc(prs: ^Parser) -> (func_call: Spanned(Stmt), err: Maybe(Error)) {
+	span := prs_peek(prs^).span
+
+	name := prs_expect(prs, .Ident) or_return
+
+	prs_expect(prs, .LParen) or_return
+
+	args: [dynamic]Expr
+	expr, expr_err := prs_expr(prs)
+	if expr_err, expr_err_ok := expr_err.?; !expr_err_ok {
+		append(&args, expr)
+		// todo: not handled for first parameter variadic
+		has_variadic := false
+
+		for prs_peek(prs^).type != .RParen {
+			prs_expect(prs, .Comma) or_return
+			expr := prs_expr(prs) or_return
+
+			append(&args, expr)
+		}
+	} else {
+		prs.current -= expr_err.consumed
+	}
+
+	prs_expect(prs, .RParen) or_return
+
+	func_call.span = span
+	func_call.value = FuncCall{name.(string), args[:]}
 	return
 }
 
