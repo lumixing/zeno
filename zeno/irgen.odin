@@ -120,6 +120,8 @@ gen_stmt :: proc(
 		qbe_stmt = gen_var_def(out, span_stmt, scope, funcs) or_return
 	case Return:
 		qbe_stmt = gen_return(out, span_stmt, scope, funcs, func) or_return
+	case FuncCall:
+		qbe_stmt = gen_func_call(out, span_stmt, scope, funcs) or_return
 	}
 
 	return
@@ -143,8 +145,9 @@ gen_var_def :: proc(
 	case .String:
 		#partial switch value in stmt.value {
 		case string:
-			scope.vars[stmt.name] = Var{qbe.Glob(stmt.name), stmt.type}
-			append(&out.datas, qbe.Data{fmt.tprintf("%s.str", stmt.name), qbe.args_str(value)})
+			glob_name := fmt.tprintf("%s.str", stmt.name)
+			scope.vars[stmt.name] = Var{qbe.Glob(glob_name), stmt.type}
+			append(&out.datas, qbe.Data{glob_name, qbe.args_str(value)})
 		case Ident:
 			// todo: recursive parents
 			if string(value) not_in scope.vars {
@@ -283,6 +286,103 @@ gen_return :: proc(
 	return
 }
 
+gen_func_call :: proc(
+	out: ^QbeOut,
+	span_stmt: Spanned(Stmt),
+	scope: ^Scope,
+	funcs: Funcs,
+) -> (
+	qbe_stmt: Maybe(qbe.Stmt),
+	err: Maybe(Error),
+) {
+	stmt := span_stmt.value.(FuncCall)
+
+	if stmt.name not_in funcs {
+		err = error(span_stmt.span, "Function %q is not defined", stmt.name)
+		return
+	}
+
+	func := funcs[stmt.name]
+
+	// todo: variadic
+	if len(func.sign.params) != len(stmt.args) {
+		err = error(
+			span_stmt.span,
+			"Function %q expected %d arguments but got %d",
+			stmt.name,
+			len(func.sign.params),
+			len(stmt.args),
+		)
+		return
+	}
+
+	args: [dynamic]qbe.Arg
+
+	for param, i in func.sign.params {
+		arg := stmt.args[i]
+
+		if _, is_ident := arg.(Ident); !is_ident && param.type != gen_expr_to_type(arg) {
+			err = error(
+				span_stmt.span,
+				"Parameter %q expected type %v but got %v",
+				param.name,
+				param.type,
+				gen_expr_to_type(arg),
+			)
+			return
+		}
+
+		#partial switch arg in arg {
+		case string:
+			// todo: add gid
+			str_name := fmt.tprintf("%s.%s.str", func.sign.name, param.name)
+			append(&out.datas, qbe.Data{str_name, qbe.args_str(arg)})
+			append(&args, qbe.Arg{.Long, qbe.Glob(str_name)})
+		case Ident:
+			if string(arg) not_in scope.vars {
+				err = error(span_stmt.span, "Variable %q is not defined", string(arg))
+				return
+			}
+
+			var := scope.vars[string(arg)]
+			if var.type != param.type {
+				err = error(
+					span_stmt.span,
+					"Parameter %q expected type %v but %q is %v",
+					param.name,
+					param.type,
+					string(arg),
+					var.type,
+				)
+				return
+			}
+
+			append(&args, qbe.Arg{gen_type(var.type), gen_var_name_to_value(var)})
+		case:
+			unimplemented()
+		}
+	}
+
+	qbe_stmt = qbe.Instr(qbe.Call{stmt.name, args[:]})
+
+	return
+}
+
+gen_expr_to_type :: proc(expr: Expr) -> (type: Type) {
+	switch value in expr {
+	case string:
+		type = .String
+	case int:
+		type = .Int
+	case bool:
+		type = .Bool
+	case Ident:
+		unimplemented()
+	}
+
+	return
+}
+
 gen_var_name_to_value :: proc(var: Var) -> (value: qbe.Value) {
 	switch name in var.name {
 	case qbe.Glob:
@@ -324,7 +424,7 @@ gen_check_name_in_scope :: proc(name: string, scope: Scope, span: Span) -> (err:
 gen_type :: proc(type: Type) -> (qbe_type: qbe.Type) {
 	switch type {
 	case .Any:
-		unreachable()
+		unimplemented()
 	case .Bool, .Int:
 		qbe_type = .Word
 	case .String:
