@@ -1,6 +1,7 @@
 package zeno
 
 import "../qbe"
+import "core:fmt"
 
 QbeOut :: struct {
 	datas: [dynamic]qbe.Data,
@@ -13,7 +14,10 @@ Func :: struct {
 }
 
 Var :: struct {
-	name: string,
+	name: union {
+		qbe.Temp,
+		qbe.Glob,
+	},
 	type: Type,
 }
 
@@ -80,7 +84,7 @@ gen_func_def :: proc(
 		gen_check_name_in_scope(param.name, scope, span_tstmt.span) or_return
 		gen_check_name_in_funcs(param.name, funcs^, span_tstmt.span) or_return
 
-		scope.vars[param.name] = Var{param.name, param.type}
+		scope.vars[param.name] = Var{qbe.Temp(param.name), param.type}
 
 		append(&params, qbe.Param{param.name, gen_type(param.type)})
 	}
@@ -88,9 +92,97 @@ gen_func_def :: proc(
 
 	func.exported = true
 
+	body: [dynamic]qbe.Stmt
+	for stmt in tstmt.body {
+		gstmt_maybe := gen_stmt(out, stmt, &scope, funcs^) or_return
+		gstmt := gstmt_maybe.? or_continue
+		append(&body, gstmt)
+	}
+	func.body = body[:]
+
 	append(&out.funcs, func)
 
 	return
+}
+
+gen_stmt :: proc(
+	out: ^QbeOut,
+	span_stmt: Spanned(Stmt),
+	scope: ^Scope,
+	funcs: Funcs,
+) -> (
+	qbe_stmt: Maybe(qbe.Stmt),
+	err: Maybe(Error),
+) {
+	#partial switch stmt in span_stmt.value {
+	case VarDef:
+		qbe_stmt = gen_var_def(out, span_stmt, scope, funcs) or_return
+	case Return:
+	// qbe_stmt = gen_return(out, spstmt) or_return
+	}
+
+	return
+}
+
+gen_var_def :: proc(
+	out: ^QbeOut,
+	span_stmt: Spanned(Stmt),
+	scope: ^Scope,
+	funcs: Funcs,
+) -> (
+	qbe_stmt: Maybe(qbe.Stmt),
+	err: Maybe(Error),
+) {
+	stmt := span_stmt.value.(VarDef)
+
+	gen_check_name_in_scope(stmt.name, scope^, span_stmt.span) or_return
+	gen_check_name_in_funcs(stmt.name, funcs, span_stmt.span) or_return
+
+	#partial switch stmt.type {
+	case .String:
+		#partial switch value in stmt.value {
+		case string:
+			scope.vars[stmt.name] = Var{qbe.Glob(stmt.name), stmt.type}
+			append(&out.datas, qbe.Data{fmt.tprintf("%s.str", stmt.name), qbe.args_str(value)})
+		case Ident:
+			// todo: recursive parents
+			if string(value) not_in scope.vars {
+				err = error(span_stmt.span, "Variable %q is not defined", string(value))
+				return
+			}
+
+			var := scope.vars[string(value)]
+			if var.type != stmt.type {
+				err = error(
+					span_stmt.span,
+					"Variable %q expected %v as a value but %q is %v",
+					stmt.name,
+					stmt.type,
+					string(value),
+					stmt.type,
+				)
+				return
+			}
+
+			scope.vars[stmt.name] = var
+		case:
+			gen_err_var_type(span_stmt.span, stmt) or_return
+		}
+	case:
+		unimplemented()
+	}
+
+	return
+}
+
+gen_err_var_type :: proc(span: Span, stmt: VarDef) -> Maybe(Error) {
+	return error(
+		span,
+		"Variable %q expected %v as a value but got %v",
+		stmt.name,
+		stmt.type,
+		stmt.value,
+	)
 }
 
 gen_check_name_in_funcs :: proc(name: string, funcs: Funcs, span: Span) -> (err: Maybe(Error)) {

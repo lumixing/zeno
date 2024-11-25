@@ -19,6 +19,7 @@ Options :: struct {
 	input:        os.Handle `args:"pos=1,required,file=r"`,
 	print_tokens: bool `args:"name=tokens"`,
 	print_stmts:  bool `args:"name=stmts"`,
+	print_qbe:    bool `args:"name=qbe"`,
 	keep_ssa:     bool `args:"name=ssa"`,
 	keep_bin:     bool `args:"name=bin"`,
 }
@@ -78,6 +79,10 @@ main :: proc() {
 
 	qbestr := qbe.bake(out.datas[:], out.funcs[:])
 	os.write_entire_file("samples/out.ssa", transmute([]u8)qbestr)
+
+	if opt.print_qbe {
+		fmt.println(qbestr)
+	}
 
 	if opt.subcmd == .run {
 		fmt.println("finished compiling! running...")
