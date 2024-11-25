@@ -205,11 +205,12 @@ prs_return :: proc(prs: ^Parser) -> (ret: Spanned(Stmt), err: Maybe(Error)) {
 	expr, expr_err := prs_expr(prs)
 	if expr_err, expr_err_ok := expr_err.?; expr_err_ok {
 		prs.current -= expr_err.consumed
-		expr = nil
+		ret.value = Return{nil}
+	} else {
+		ret.value = Return{expr}
 	}
 
 	ret.span = span
-	ret.value = Return{expr}
 	return
 }
 

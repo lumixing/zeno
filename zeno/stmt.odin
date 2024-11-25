@@ -62,7 +62,7 @@ Return :: struct {
 	value: Maybe(Expr),
 }
 
-Expr :: union {
+Expr :: union #no_nil {
 	string,
 	int,
 	bool,
