@@ -184,6 +184,28 @@ gen_var_def :: proc(
 		case:
 			gen_err_var_type(span_stmt.span, stmt) or_return
 		}
+	case .Bool:
+		#partial switch value in stmt.value {
+		case bool:
+			scope.vars[stmt.name] = Var{stmt.name, qbe.Temp(stmt.name), stmt.type}
+			qbe_stmt = qbe.TempDef{stmt.name, gen_type(stmt.type), qbe.Copy(value ? 1 : 0)}
+		case Ident:
+			var := gen_get_var(scope^, string(value), span_stmt.span) or_return
+			gen_same_type(stmt, var, span_stmt.span) or_return
+
+			new_var := var
+			new_var.name = stmt.name
+			scope.vars[stmt.name] = new_var
+
+			// this might not work!
+			qbe_stmt = qbe.TempDef {
+				stmt.name,
+				gen_type(stmt.type),
+				qbe.Copy(gen_var_name_to_value(var)),
+			}
+		case:
+			gen_err_var_type(span_stmt.span, stmt) or_return
+		}
 	case:
 		unimplemented()
 	}
