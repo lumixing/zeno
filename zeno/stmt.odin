@@ -67,6 +67,7 @@ Expr :: union #no_nil {
 	int,
 	bool,
 	Ident,
+	FuncCall,
 }
 
 Ident :: distinct string

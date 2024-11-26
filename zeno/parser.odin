@@ -216,16 +216,26 @@ prs_return :: proc(prs: ^Parser) -> (ret: Spanned(Stmt), err: Maybe(Error)) {
 
 prs_expr :: proc(prs: ^Parser) -> (expr: Expr, err: Maybe(Error)) {
 	init_current := prs.current
-	token := prs_consume(prs)
+	token := prs_peek(prs^)
 
 	#partial switch token.type {
 	case .Ident:
+		if prs_peek(prs^, 1).type == .LParen {
+			func_call := prs_func_call(prs) or_return
+			expr = func_call.value.(FuncCall)
+			return
+		}
+
+		prs.current += 1
 		expr = Ident(token.value.(string))
 	case .String:
+		prs.current += 1
 		expr = token.value.(string)
 	case .Int:
+		prs.current += 1
 		expr = token.value.(int)
 	case .Bool:
+		prs.current += 1
 		expr = token.value.(bool)
 	case:
 		cons := prs.current - init_current

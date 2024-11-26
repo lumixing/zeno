@@ -181,6 +181,23 @@ gen_var_def :: proc(
 				gen_type(stmt.type),
 				qbe.Copy(gen_var_name_to_value(var)),
 			}
+		case FuncCall:
+			spanned_value: Spanned(Stmt)
+			spanned_value.span = span_stmt.span
+			spanned_value.value = value
+			qbe_func_call_stmt := gen_func_call(out, spanned_value, scope, funcs) or_return
+			// func := gen_get_func(funcs, value.name, span_stmt.span) or_return
+			// gen_same_type(stmt, func, span_stmt.span) or_return
+
+			scope.vars[stmt.name] = Var{stmt.name, qbe.Temp(stmt.name), stmt.type}
+
+			// args: [dynamic]qbe.Arg
+
+			// for arg in value.args {
+			// 	append(&args, qbe.Arg{gen_type(gen_expr_to_type(arg)), arg})
+			// }
+
+			qbe_stmt = qbe.TempDef{stmt.name, gen_type(stmt.type), qbe_func_call_stmt.(qbe.Instr)}
 		case:
 			gen_err_var_type(span_stmt.span, stmt) or_return
 		}
@@ -269,7 +286,7 @@ gen_func_call :: proc(
 	scope: ^Scope,
 	funcs: Funcs,
 ) -> (
-	qbe_stmt: Maybe(qbe.Stmt),
+	qbe_stmt: qbe.Stmt,
 	err: Maybe(Error),
 ) {
 	stmt := span_stmt.value.(FuncCall)
@@ -336,6 +353,7 @@ Typable :: union #no_nil {
 	Expr,
 	Param,
 	VarDef,
+	// FuncCall, // remove this and add Func to FuncCall as field, epiphany
 }
 
 gen_typable_type :: proc(typable: Typable) -> (type: Type) {
@@ -410,11 +428,21 @@ gen_same_type :: proc(main: Typable, sec: Typable, span: Span) -> (err: Maybe(Er
 // todo: recursive parents
 gen_get_var :: proc(scope: Scope, name: string, span: Span) -> (var: Var, err: Maybe(Error)) {
 	if name not_in scope.vars {
-		err = error(span, "Variable %q is not defined", name)
+		err = error(span, "Variable %q is not declared", name)
 		return
 	}
 
 	var = scope.vars[name]
+	return
+}
+
+gen_get_func :: proc(funcs: Funcs, name: string, span: Span) -> (func: Func, err: Maybe(Error)) {
+	if name not_in funcs {
+		err = error(span, "Function %q is not declared", name)
+		return
+	}
+
+	func = funcs[name]
 	return
 }
 
@@ -427,6 +455,8 @@ gen_expr_to_type :: proc(expr: Expr) -> (type: Type) {
 	case bool:
 		type = .Bool
 	case Ident:
+		unimplemented()
+	case FuncCall:
 		unimplemented()
 	}
 
