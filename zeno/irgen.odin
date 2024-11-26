@@ -31,6 +31,9 @@ Scope :: struct {
 	vars:     Vars,
 }
 
+// todo: remove global, global bad, grr
+gid := 0
+
 gen_qbe :: proc(top_stmts: []Spanned(TopStmt)) -> (out: QbeOut, err: Maybe(Error)) {
 	funcs: Funcs
 	global_scope: Scope
@@ -78,7 +81,7 @@ gen_func_def :: proc(
 
 	func: qbe.Func
 	func.name = tstmt.sign.name
-	func.return_type = gen_type(tstmt.sign.return_type)
+	func.return_type = tstmt.sign.return_type == .Void ? nil : gen_type(tstmt.sign.return_type)
 
 	params: [dynamic]qbe.Param
 	for param in tstmt.sign.params {
@@ -94,6 +97,8 @@ gen_func_def :: proc(
 	func.exported = true
 
 	body: [dynamic]qbe.Stmt
+	append(&body, qbe.Label("start"))
+
 	for stmt in tstmt.body {
 		gstmt_maybe := gen_stmt(out, stmt, &scope, funcs^, funcs[tstmt.sign.name]) or_return
 		gstmt := gstmt_maybe.? or_continue
@@ -255,7 +260,10 @@ gen_func_call :: proc(
 	func := funcs[stmt.name]
 
 	// todo: variadic
-	if len(func.sign.params) != len(stmt.args) {
+	has_variadic :=
+		len(func.sign.params) != 0 && func.sign.params[len(func.sign.params) - 1].variadic
+
+	if !has_variadic && len(func.sign.params) != len(stmt.args) {
 		err = error(
 			span_stmt.span,
 			"Function %q expected %d arguments but got %d",
@@ -268,8 +276,10 @@ gen_func_call :: proc(
 
 	args: [dynamic]qbe.Arg
 
-	for param, i in func.sign.params {
-		arg := stmt.args[i]
+	for arg, i in stmt.args {
+		params_len := len(func.sign.params)
+		// param := i < params_len ? func.sign.params[i] : func.sign.params[params_len - 1]
+		param := func.sign.params[i < params_len ? i : params_len - 1]
 
 		if _, is_ident := arg.(Ident); !is_ident {
 			gen_same_type(param, arg, span_stmt.span) or_return
@@ -277,10 +287,12 @@ gen_func_call :: proc(
 
 		#partial switch arg in arg {
 		case string:
-			// todo: add gid
-			str_name := fmt.tprintf("%s.%s.str", func.sign.name, param.name)
+			defer gid += 1
+			str_name := fmt.tprintf("%s.%s.str.%d", func.sign.name, param.name, gid)
 			append(&out.datas, qbe.Data{str_name, qbe.args_str(arg)})
 			append(&args, qbe.Arg{.Long, qbe.Glob(str_name)})
+		case int:
+			append(&args, qbe.Arg{.Long, arg})
 		case Ident:
 			var := gen_get_var(scope^, string(arg), span_stmt.span) or_return
 			gen_same_type(param, var, span_stmt.span) or_return
@@ -363,7 +375,7 @@ gen_same_type :: proc(main: Typable, sec: Typable, span: Span) -> (err: Maybe(Er
 	main_type := gen_typable_type(main)
 	sec_type := gen_typable_type(sec)
 
-	if main_type != sec_type {
+	if (main_type != .Any) && (main_type != sec_type) {
 		main_str := gen_typable_main_str(main)
 		sec_str := gen_typable_sec_str(sec)
 
