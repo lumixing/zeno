@@ -14,11 +14,12 @@ Func :: struct {
 }
 
 Var :: struct {
-	name: union {
+	name:     string, // used when key isnt available
+	qbe_name: union {
 		qbe.Temp,
 		qbe.Glob,
 	},
-	type: Type,
+	type:     Type,
 }
 
 Funcs :: map[string]Func
@@ -84,7 +85,7 @@ gen_func_def :: proc(
 		gen_check_name_in_scope(param.name, scope, span_tstmt.span) or_return
 		gen_check_name_in_funcs(param.name, funcs^, span_tstmt.span) or_return
 
-		scope.vars[param.name] = Var{qbe.Temp(param.name), param.type}
+		scope.vars[param.name] = Var{param.name, qbe.Temp(param.name), param.type}
 
 		append(&params, qbe.Param{param.name, gen_type(param.type)})
 	}
@@ -146,27 +147,11 @@ gen_var_def :: proc(
 		#partial switch value in stmt.value {
 		case string:
 			glob_name := fmt.tprintf("%s.str", stmt.name)
-			scope.vars[stmt.name] = Var{qbe.Glob(glob_name), stmt.type}
+			scope.vars[stmt.name] = Var{stmt.name, qbe.Glob(glob_name), stmt.type}
 			append(&out.datas, qbe.Data{glob_name, qbe.args_str(value)})
 		case Ident:
-			// todo: recursive parents
-			if string(value) not_in scope.vars {
-				err = error(span_stmt.span, "Variable %q is not defined", string(value))
-				return
-			}
-
-			var := scope.vars[string(value)]
-			if var.type != stmt.type {
-				err = error(
-					span_stmt.span,
-					"Variable %q expected %v as a value but %q is %v",
-					stmt.name,
-					stmt.type,
-					string(value),
-					stmt.type,
-				)
-				return
-			}
+			var := gen_get_var(scope^, string(value), span_stmt.span) or_return
+			gen_same_type(stmt, var, span_stmt.span) or_return
 
 			scope.vars[stmt.name] = var
 		case:
@@ -175,29 +160,22 @@ gen_var_def :: proc(
 	case .Int:
 		#partial switch value in stmt.value {
 		case int:
-			scope.vars[stmt.name] = Var{qbe.Temp(stmt.name), stmt.type}
+			scope.vars[stmt.name] = Var{stmt.name, qbe.Temp(stmt.name), stmt.type}
 			qbe_stmt = qbe.TempDef{stmt.name, gen_type(stmt.type), qbe.Copy(value)}
 		case Ident:
-			// todo: recursive parents
-			if string(value) not_in scope.vars {
-				err = error(span_stmt.span, "Variable %q is not defined", string(value))
-				return
-			}
+			var := gen_get_var(scope^, string(value), span_stmt.span) or_return
+			gen_same_type(stmt, var, span_stmt.span) or_return
 
-			var := scope.vars[string(value)]
-			if var.type != stmt.type {
-				err = error(
-					span_stmt.span,
-					"Variable %q expected %v as a value but %q is %v",
-					stmt.name,
-					stmt.type,
-					string(value),
-					stmt.type,
-				)
-				return
-			}
+			new_var := var
+			new_var.name = stmt.name
+			scope.vars[stmt.name] = new_var
 
-			scope.vars[stmt.name] = var
+			// this might not work!
+			qbe_stmt = qbe.TempDef {
+				stmt.name,
+				gen_type(stmt.type),
+				qbe.Copy(gen_var_name_to_value(var)),
+			}
 		case:
 			gen_err_var_type(span_stmt.span, stmt) or_return
 		}
@@ -227,43 +205,19 @@ gen_return :: proc(
 			case int:
 				qbe_stmt = qbe.Instr(qbe.Return(value))
 			case Ident:
-				if string(value) not_in scope.vars {
-					err = error(span_stmt.span, "Variable %q is not defined", string(value))
-					return
-				}
-
-				var := scope.vars[string(value)]
-				if var.type != func.sign.return_type {
-					err = error(
-						span_stmt.span,
-						"Function %q expected return type %v but %q is %v",
-						func.sign.name,
-						func.sign.return_type,
-						string(value),
-						var.type,
-					)
-					return
-				}
+				var := gen_get_var(scope^, string(value), span_stmt.span) or_return
+				gen_same_type(func, var, span_stmt.span) or_return
 
 				qbe_stmt = qbe.Instr(qbe.Return(gen_var_name_to_value(var)))
 			case:
-				err = error(
-					span_stmt.span,
-					"Function %q expected return type %v but got %v",
-					func.sign.name,
-					func.sign.return_type,
-					value,
-				)
+				err = gen_same_type(func, value, span_stmt.span)
+				assert(err != nil)
+				return
 			}
 		case .Void:
-			if stmt.value != nil {
-				err = error(
-					span_stmt.span,
-					"Function %q expected return type %v but got %v",
-					func.sign.name,
-					func.sign.return_type,
-					stmt.value,
-				)
+			if value, value_ok := stmt.value.?; value_ok {
+				err = gen_same_type(func, value, span_stmt.span)
+				assert(err != nil)
 				return
 			}
 
@@ -271,12 +225,8 @@ gen_return :: proc(
 		}
 	} else {
 		if func.sign.return_type != .Void {
-			err = error(
-				span_stmt.span,
-				"Function %q expected return type %v but got nothing",
-				func.sign.name,
-				func.sign.return_type,
-			)
+			err = gen_same_type(func, Param{"_return_", .Void, false}, span_stmt.span)
+			assert(err != nil)
 			return
 		}
 
@@ -321,15 +271,8 @@ gen_func_call :: proc(
 	for param, i in func.sign.params {
 		arg := stmt.args[i]
 
-		if _, is_ident := arg.(Ident); !is_ident && param.type != gen_expr_to_type(arg) {
-			err = error(
-				span_stmt.span,
-				"Parameter %q expected type %v but got %v",
-				param.name,
-				param.type,
-				gen_expr_to_type(arg),
-			)
-			return
+		if _, is_ident := arg.(Ident); !is_ident {
+			gen_same_type(param, arg, span_stmt.span) or_return
 		}
 
 		#partial switch arg in arg {
@@ -339,23 +282,8 @@ gen_func_call :: proc(
 			append(&out.datas, qbe.Data{str_name, qbe.args_str(arg)})
 			append(&args, qbe.Arg{.Long, qbe.Glob(str_name)})
 		case Ident:
-			if string(arg) not_in scope.vars {
-				err = error(span_stmt.span, "Variable %q is not defined", string(arg))
-				return
-			}
-
-			var := scope.vars[string(arg)]
-			if var.type != param.type {
-				err = error(
-					span_stmt.span,
-					"Parameter %q expected type %v but %q is %v",
-					param.name,
-					param.type,
-					string(arg),
-					var.type,
-				)
-				return
-			}
+			var := gen_get_var(scope^, string(arg), span_stmt.span) or_return
+			gen_same_type(param, var, span_stmt.span) or_return
 
 			append(&args, qbe.Arg{gen_type(var.type), gen_var_name_to_value(var)})
 		case:
@@ -365,6 +293,94 @@ gen_func_call :: proc(
 
 	qbe_stmt = qbe.Instr(qbe.Call{stmt.name, args[:]})
 
+	return
+}
+
+Typable :: union #no_nil {
+	Var,
+	Func,
+	Expr,
+	Param,
+	VarDef,
+}
+
+gen_typable_type :: proc(typable: Typable) -> (type: Type) {
+	switch t in typable {
+	case Var:
+		type = t.type
+	case Func:
+		type = t.sign.return_type
+	case Expr:
+		type = gen_expr_to_type(t)
+	case Param:
+		type = t.type
+	case VarDef:
+		type = t.type
+	}
+
+	return
+}
+
+gen_typable_main_str :: proc(typable: Typable) -> (str: string) {
+	type := gen_typable_type(typable)
+
+	switch t in typable {
+	case Var:
+		str = fmt.tprintf("Variable %q expected type %v", t.name, type)
+	case Func:
+		str = fmt.tprintf("Function %q expected return type %v", t.sign.name, type)
+	case Expr:
+		unimplemented()
+	case Param:
+		str = fmt.tprintf("Parameter %q expected type %v", t.name, type)
+	case VarDef:
+		str = fmt.tprintf("Variable %q expected type %v", t.name, type)
+	}
+
+	return
+}
+
+gen_typable_sec_str :: proc(typable: Typable) -> (str: string) {
+	type := gen_typable_type(typable)
+
+	switch t in typable {
+	case Var:
+		str = fmt.tprintf("but variable %q is %v", t.name, type)
+	case Func:
+		str = fmt.tprintf("but function %q return type is %v", t.sign.name, type)
+	case Expr:
+		str = fmt.tprintf("but %v is %v", t, type)
+	case Param:
+		str = fmt.tprintf("but parameter %q is %v", t.name, type)
+	case VarDef:
+		str = fmt.tprintf("but variable %q is %v", t.name, type)
+	}
+
+	return
+}
+
+gen_same_type :: proc(main: Typable, sec: Typable, span: Span) -> (err: Maybe(Error)) {
+	main_type := gen_typable_type(main)
+	sec_type := gen_typable_type(sec)
+
+	if main_type != sec_type {
+		main_str := gen_typable_main_str(main)
+		sec_str := gen_typable_sec_str(sec)
+
+		err = error(span, "%s %s", main_str, sec_str)
+	}
+
+	return
+}
+
+// todo: recursive parents
+gen_get_var :: proc(scope: Scope, name: string, span: Span) -> (var: Var, err: Maybe(Error)) {
+	if name not_in scope.vars {
+		err = error(span, "Variable %q is not defined", name)
+		return
+	}
+
+	var = scope.vars[name]
 	return
 }
 
@@ -384,7 +400,7 @@ gen_expr_to_type :: proc(expr: Expr) -> (type: Type) {
 }
 
 gen_var_name_to_value :: proc(var: Var) -> (value: qbe.Value) {
-	switch name in var.name {
+	switch name in var.qbe_name {
 	case qbe.Glob:
 		value = name
 	case qbe.Temp:
