@@ -20,15 +20,17 @@ Var :: struct {
 		qbe.Glob,
 	},
 	type:     Type,
+	ptr:      Maybe(^Var),
 }
 
 Funcs :: map[string]Func
 Vars :: map[string]Var
 
 Scope :: struct {
-	parent:   Maybe(^Scope),
-	children: [dynamic]^Scope,
-	vars:     Vars,
+	parent:    Maybe(^Scope),
+	children:  [dynamic]^Scope,
+	vars:      Vars,
+	temp_vars: Vars, // used to avoid dangling pointers for Var.ptr
 }
 
 // todo: remove global, global bad, grr
@@ -88,7 +90,7 @@ gen_func_def :: proc(
 		gen_check_name_in_scope(param.name, scope, span_tstmt.span) or_return
 		gen_check_name_in_funcs(param.name, funcs^, span_tstmt.span) or_return
 
-		scope.vars[param.name] = Var{param.name, qbe.Temp(param.name), param.type}
+		scope.vars[param.name] = Var{param.name, qbe.Temp(param.name), param.type, nil}
 
 		append(&params, qbe.Param{param.name, gen_type(param.type)})
 	}
@@ -100,10 +102,12 @@ gen_func_def :: proc(
 	append(&body, qbe.Label("start"))
 
 	for stmt in tstmt.body {
-		gstmt_maybe := gen_stmt(out, stmt, &scope, funcs^, funcs[tstmt.sign.name]) or_return
-		gstmt := gstmt_maybe.? or_continue
-		append(&body, gstmt)
+		stmts := gen_stmt(out, stmt, &scope, funcs^, funcs[tstmt.sign.name]) or_return
+		for stmt in stmts {
+			append(&body, stmt)
+		}
 	}
+
 	func.body = body[:]
 
 	append(&out.funcs, func)
@@ -118,18 +122,21 @@ gen_stmt :: proc(
 	funcs: Funcs,
 	func: Func,
 ) -> (
-	qbe_stmt: Maybe(qbe.Stmt),
+	qbe_stmts: []qbe.Stmt,
 	err: Maybe(Error),
 ) {
+	qbe_stmts_dyn: [dynamic]qbe.Stmt
+
 	#partial switch stmt in span_stmt.value {
 	case VarDef:
-		qbe_stmt = gen_var_def(out, span_stmt, scope, funcs) or_return
+		qbe_stmts_dyn = gen_var_def(out, span_stmt, scope, funcs) or_return
 	case Return:
-		qbe_stmt = gen_return(out, span_stmt, scope, funcs, func) or_return
+		qbe_stmts_dyn = gen_return(out, span_stmt, scope, funcs, func) or_return
 	case FuncCall:
-		qbe_stmt = gen_func_call(out, span_stmt, scope, funcs) or_return
+		qbe_stmts_dyn = gen_func_call(out, span_stmt, scope, funcs) or_return
 	}
 
+	qbe_stmts = qbe_stmts_dyn[:]
 	return
 }
 
@@ -139,7 +146,7 @@ gen_var_def :: proc(
 	scope: ^Scope,
 	funcs: Funcs,
 ) -> (
-	qbe_stmt: Maybe(qbe.Stmt),
+	qbe_stmts: [dynamic]qbe.Stmt,
 	err: Maybe(Error),
 ) {
 	stmt := span_stmt.value.(VarDef)
@@ -152,7 +159,7 @@ gen_var_def :: proc(
 		#partial switch value in stmt.value {
 		case string:
 			glob_name := fmt.tprintf("%s.str", stmt.name)
-			scope.vars[stmt.name] = Var{stmt.name, qbe.Glob(glob_name), stmt.type}
+			scope.vars[stmt.name] = Var{stmt.name, qbe.Glob(glob_name), stmt.type, nil}
 			append(&out.datas, qbe.Data{glob_name, qbe.args_str(value)})
 		case Ident:
 			var := gen_get_var(scope^, string(value), span_stmt.span) or_return
@@ -165,8 +172,25 @@ gen_var_def :: proc(
 	case .Int:
 		#partial switch value in stmt.value {
 		case int:
-			scope.vars[stmt.name] = Var{stmt.name, qbe.Temp(stmt.name), stmt.type}
-			qbe_stmt = qbe.TempDef{stmt.name, gen_type(stmt.type), qbe.Copy(value)}
+			ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
+			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(int)}})
+			ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
+			scope.temp_vars[ptr_var_name] = ptr_var
+
+			append(&qbe_stmts, qbe.Instr(qbe.Store{.Word, value, gen_var_name_to_value(ptr_var)}))
+			append(
+				&qbe_stmts,
+				qbe.TempDef{stmt.name, .Word, qbe.Load{.Word, gen_var_name_to_value(ptr_var)}},
+			)
+
+			// fixme: this might be dangling pointer!!
+			scope.vars[stmt.name] = Var {
+				stmt.name,
+				qbe.Temp(stmt.name),
+				stmt.type,
+				&scope.temp_vars[ptr_var_name],
+			}
+		// qbe_stmt = qbe.TempDef{stmt.name, gen_type(stmt.type), qbe.Copy(value)}
 		case Ident:
 			var := gen_get_var(scope^, string(value), span_stmt.span) or_return
 			gen_same_type(stmt, var, span_stmt.span) or_return
@@ -176,36 +200,33 @@ gen_var_def :: proc(
 			scope.vars[stmt.name] = new_var
 
 			// this might not work!
-			qbe_stmt = qbe.TempDef {
-				stmt.name,
-				gen_type(stmt.type),
-				qbe.Copy(gen_var_name_to_value(var)),
-			}
+			append(
+				&qbe_stmts,
+				qbe.TempDef{stmt.name, gen_type(stmt.type), qbe.Copy(gen_var_name_to_value(var))},
+			)
 		case FuncCall:
 			spanned_value: Spanned(Stmt)
 			spanned_value.span = span_stmt.span
 			spanned_value.value = value
-			qbe_func_call_stmt := gen_func_call(out, spanned_value, scope, funcs) or_return
-			// func := gen_get_func(funcs, value.name, span_stmt.span) or_return
-			// gen_same_type(stmt, func, span_stmt.span) or_return
+			qbe_func_call_stmts := gen_func_call(out, spanned_value, scope, funcs) or_return
 
-			scope.vars[stmt.name] = Var{stmt.name, qbe.Temp(stmt.name), stmt.type}
+			scope.vars[stmt.name] = Var{stmt.name, qbe.Temp(stmt.name), stmt.type, nil}
 
-			// args: [dynamic]qbe.Arg
-
-			// for arg in value.args {
-			// 	append(&args, qbe.Arg{gen_type(gen_expr_to_type(arg)), arg})
-			// }
-
-			qbe_stmt = qbe.TempDef{stmt.name, gen_type(stmt.type), qbe_func_call_stmt.(qbe.Instr)}
+			append(
+				&qbe_stmts,
+				qbe.TempDef{stmt.name, gen_type(stmt.type), qbe_func_call_stmts[0].(qbe.Instr)},
+			)
 		case:
 			gen_err_var_type(span_stmt.span, stmt) or_return
 		}
 	case .Bool:
 		#partial switch value in stmt.value {
 		case bool:
-			scope.vars[stmt.name] = Var{stmt.name, qbe.Temp(stmt.name), stmt.type}
-			qbe_stmt = qbe.TempDef{stmt.name, gen_type(stmt.type), qbe.Copy(value ? 1 : 0)}
+			scope.vars[stmt.name] = Var{stmt.name, qbe.Temp(stmt.name), stmt.type, nil}
+			append(
+				&qbe_stmts,
+				qbe.TempDef{stmt.name, gen_type(stmt.type), qbe.Copy(value ? 1 : 0)},
+			)
 		case Ident:
 			var := gen_get_var(scope^, string(value), span_stmt.span) or_return
 			gen_same_type(stmt, var, span_stmt.span) or_return
@@ -215,11 +236,10 @@ gen_var_def :: proc(
 			scope.vars[stmt.name] = new_var
 
 			// this might not work!
-			qbe_stmt = qbe.TempDef {
-				stmt.name,
-				gen_type(stmt.type),
-				qbe.Copy(gen_var_name_to_value(var)),
-			}
+			append(
+				&qbe_stmts,
+				qbe.TempDef{stmt.name, gen_type(stmt.type), qbe.Copy(gen_var_name_to_value(var))},
+			)
 		case:
 			gen_err_var_type(span_stmt.span, stmt) or_return
 		}
@@ -237,7 +257,7 @@ gen_return :: proc(
 	funcs: Funcs,
 	func: Func,
 ) -> (
-	qbe_stmt: Maybe(qbe.Stmt),
+	qbe_stmt: [dynamic]qbe.Stmt,
 	err: Maybe(Error),
 ) {
 	stmt := span_stmt.value.(Return)
@@ -247,12 +267,12 @@ gen_return :: proc(
 		case .Int:
 			#partial switch value in value {
 			case int:
-				qbe_stmt = qbe.Instr(qbe.Return(value))
+				append(&qbe_stmt, qbe.Instr(qbe.Return(value)))
 			case Ident:
 				var := gen_get_var(scope^, string(value), span_stmt.span) or_return
 				gen_same_type(func, var, span_stmt.span) or_return
 
-				qbe_stmt = qbe.Instr(qbe.Return(gen_var_name_to_value(var)))
+				append(&qbe_stmt, qbe.Instr(qbe.Return(gen_var_name_to_value(var))))
 			case:
 				err = gen_same_type(func, value, span_stmt.span)
 				assert(err != nil)
@@ -265,7 +285,7 @@ gen_return :: proc(
 				return
 			}
 
-			qbe_stmt = qbe.Instr(qbe.Return(nil))
+			append(&qbe_stmt, qbe.Instr(qbe.Return(nil)))
 		}
 	} else {
 		if func.sign.return_type != .Void {
@@ -274,7 +294,7 @@ gen_return :: proc(
 			return
 		}
 
-		qbe_stmt = qbe.Instr(qbe.Return(nil))
+		append(&qbe_stmt, qbe.Instr(qbe.Return(nil)))
 	}
 
 	return
@@ -286,7 +306,7 @@ gen_func_call :: proc(
 	scope: ^Scope,
 	funcs: Funcs,
 ) -> (
-	qbe_stmt: qbe.Stmt,
+	qbe_stmt: [dynamic]qbe.Stmt,
 	err: Maybe(Error),
 ) {
 	stmt := span_stmt.value.(FuncCall)
@@ -342,7 +362,7 @@ gen_func_call :: proc(
 		}
 	}
 
-	qbe_stmt = qbe.Instr(qbe.Call{stmt.name, args[:]})
+	append(&qbe_stmt, qbe.Instr(qbe.Call{stmt.name, args[:]}))
 
 	return
 }
@@ -507,7 +527,7 @@ gen_type :: proc(type: Type) -> (qbe_type: qbe.Type) {
 		unimplemented()
 	case .Bool, .Int:
 		qbe_type = .Word
-	case .String:
+	case .String, .Pointer:
 		qbe_type = .Long
 	case .Void:
 		qbe_type = nil

@@ -46,6 +46,9 @@ Instr :: union {
 	Call,
 	Return,
 	CondJump,
+	Alloc,
+	Store,
+	Load,
 }
 
 InstrArg :: struct {
@@ -81,4 +84,26 @@ CondJump :: struct {
 	value:          Value,
 	non_zero_label: Label,
 	zero_label:     Label,
+}
+
+AllocAlign :: enum {
+	a4  = 4,
+	a8  = 8,
+	a16 = 16,
+}
+
+Alloc :: struct {
+	align: AllocAlign,
+	size:  Value,
+}
+
+Store :: struct {
+	type:    Type,
+	value:   Value,
+	address: Value,
+}
+
+Load :: struct {
+	type:    Type,
+	address: Value,
 }

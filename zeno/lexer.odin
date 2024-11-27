@@ -113,6 +113,8 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 					lexer_add(lexer, .KW_Bool)
 				case "any":
 					lexer_add(lexer, .KW_Any)
+				case "ptr":
+					lexer_add(lexer, .KW_Ptr)
 				case "true":
 					lexer_add(lexer, .Bool, true)
 				case "false":

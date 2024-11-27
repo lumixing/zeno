@@ -35,6 +35,7 @@ TokenType :: enum {
 	KW_Void,
 	KW_Bool,
 	KW_Any,
+	KW_Ptr,
 	KW_If,
 	KW_Return,
 }

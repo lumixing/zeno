@@ -39,6 +39,7 @@ Type :: enum {
 	Int,
 	Bool,
 	Any,
+	Pointer,
 }
 
 Stmt :: union {
