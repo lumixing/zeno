@@ -183,39 +183,69 @@ gen_var_def :: proc(
 				qbe.TempDef{stmt.name, .Word, qbe.Load{.Word, gen_var_name_to_value(ptr_var)}},
 			)
 
-			// fixme: this might be dangling pointer!!
 			scope.vars[stmt.name] = Var {
 				stmt.name,
 				qbe.Temp(stmt.name),
 				stmt.type,
 				&scope.temp_vars[ptr_var_name],
 			}
-		// qbe_stmt = qbe.TempDef{stmt.name, gen_type(stmt.type), qbe.Copy(value)}
 		case Ident:
 			var := gen_get_var(scope^, string(value), span_stmt.span) or_return
 			gen_same_type(stmt, var, span_stmt.span) or_return
 
+			ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
+			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(int)}})
+			ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
+			scope.temp_vars[ptr_var_name] = ptr_var
+
+			// might need to deref var to update its value!
+			append(
+				&qbe_stmts,
+				qbe.Instr(
+					qbe.Store{.Word, gen_var_name_to_value(var), gen_var_name_to_value(ptr_var)},
+				),
+			)
+			append(
+				&qbe_stmts,
+				qbe.TempDef{stmt.name, .Word, qbe.Load{.Word, gen_var_name_to_value(ptr_var)}},
+			)
+
 			new_var := var
 			new_var.name = stmt.name
 			scope.vars[stmt.name] = new_var
-
-			// this might not work!
-			append(
-				&qbe_stmts,
-				qbe.TempDef{stmt.name, gen_type(stmt.type), qbe.Copy(gen_var_name_to_value(var))},
-			)
 		case FuncCall:
+			// todo: check return type of func with var type!!!
 			spanned_value: Spanned(Stmt)
 			spanned_value.span = span_stmt.span
 			spanned_value.value = value
 			qbe_func_call_stmts := gen_func_call(out, spanned_value, scope, funcs) or_return
 
-			scope.vars[stmt.name] = Var{stmt.name, qbe.Temp(stmt.name), stmt.type, nil}
+			ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
+			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(int)}})
+			ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
+			scope.temp_vars[ptr_var_name] = ptr_var
 
+			call_var_name := fmt.tprintf("%s.call", value.name)
 			append(
 				&qbe_stmts,
-				qbe.TempDef{stmt.name, gen_type(stmt.type), qbe_func_call_stmts[0].(qbe.Instr)},
+				qbe.TempDef {
+					call_var_name,
+					gen_type(stmt.type),
+					qbe_func_call_stmts[0].(qbe.Instr),
+				},
 			)
+			append(
+				&qbe_stmts,
+				qbe.Instr(
+					qbe.Store{.Word, qbe.Temp(call_var_name), gen_var_name_to_value(ptr_var)},
+				),
+			)
+			append(
+				&qbe_stmts,
+				qbe.TempDef{stmt.name, .Word, qbe.Load{.Word, gen_var_name_to_value(ptr_var)}},
+			)
+
+			scope.vars[stmt.name] = Var{stmt.name, qbe.Temp(stmt.name), stmt.type, nil}
 		case:
 			gen_err_var_type(span_stmt.span, stmt) or_return
 		}
