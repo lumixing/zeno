@@ -177,7 +177,7 @@ gen_var_def :: proc(
 		#partial switch value in stmt.value {
 		case int:
 			ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
-			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(int)}})
+			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(i32)}})
 			ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
 			scope.temp_vars[ptr_var_name] = ptr_var
 
@@ -198,7 +198,7 @@ gen_var_def :: proc(
 			gen_same_type(stmt, var, span_stmt.span) or_return
 
 			ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
-			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(int)}})
+			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(i32)}})
 			ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
 			scope.temp_vars[ptr_var_name] = ptr_var
 
@@ -225,7 +225,7 @@ gen_var_def :: proc(
 			qbe_func_call_stmts := gen_func_call(out, spanned_value, scope, funcs) or_return
 
 			ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
-			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(int)}})
+			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(i32)}})
 			ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
 			scope.temp_vars[ptr_var_name] = ptr_var
 
