@@ -82,6 +82,8 @@ bake :: proc(datas: []Data, funcs: []Func) -> string {
 				)
 			case Instr:
 				append(&lines, fmt.tprintfln("\t%s", instr(st)))
+			case nil:
+				append(&lines, "\n")
 			}
 		}
 	}

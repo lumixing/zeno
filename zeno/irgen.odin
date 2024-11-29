@@ -136,6 +136,10 @@ gen_stmt :: proc(
 		qbe_stmts_dyn = gen_func_call(out, span_stmt, scope, funcs) or_return
 	}
 
+	if len(qbe_stmts_dyn) != 0 {
+		append(&qbe_stmts_dyn, nil)
+	}
+
 	qbe_stmts = qbe_stmts_dyn[:]
 	return
 }
