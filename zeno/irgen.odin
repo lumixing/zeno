@@ -174,31 +174,23 @@ gen_var_def :: proc(
 			gen_err_var_type(span_stmt.span, stmt) or_return
 		}
 	case .Int:
+		ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
+		ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
+		scope.temp_vars[ptr_var_name] = ptr_var
+		append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(i32)}})
+
 		#partial switch value in stmt.value {
 		case int:
-			ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
-			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(i32)}})
-			ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
-			scope.temp_vars[ptr_var_name] = ptr_var
-
 			append(&qbe_stmts, qbe.Instr(qbe.Store{.Word, value, gen_var_name_to_value(ptr_var)}))
 			append(
 				&qbe_stmts,
 				qbe.TempDef{stmt.name, .Word, qbe.Load{.Word, gen_var_name_to_value(ptr_var)}},
 			)
-
-			scope.vars[stmt.name] = Var {
-				stmt.name,
-				qbe.Temp(stmt.name),
-				stmt.type,
-				&scope.temp_vars[ptr_var_name],
-			}
 		case Ident:
 			var := gen_get_var(scope^, string(value), span_stmt.span) or_return
 			gen_same_type(stmt, var, span_stmt.span) or_return
 
 			ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
-			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(i32)}})
 			ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
 			scope.temp_vars[ptr_var_name] = ptr_var
 
@@ -213,21 +205,12 @@ gen_var_def :: proc(
 				&qbe_stmts,
 				qbe.TempDef{stmt.name, .Word, qbe.Load{.Word, gen_var_name_to_value(ptr_var)}},
 			)
-
-			new_var := var
-			new_var.name = stmt.name
-			scope.vars[stmt.name] = new_var
 		case FuncCall:
 			// todo: check return type of func with var type!!!
 			spanned_value: Spanned(Stmt)
 			spanned_value.span = span_stmt.span
 			spanned_value.value = value
 			qbe_func_call_stmts := gen_func_call(out, spanned_value, scope, funcs) or_return
-
-			ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
-			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(i32)}})
-			ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
-			scope.temp_vars[ptr_var_name] = ptr_var
 
 			call_var_name := fmt.tprintf("%s.call", value.name)
 			append(
@@ -248,10 +231,15 @@ gen_var_def :: proc(
 				&qbe_stmts,
 				qbe.TempDef{stmt.name, .Word, qbe.Load{.Word, gen_var_name_to_value(ptr_var)}},
 			)
-
-			scope.vars[stmt.name] = Var{stmt.name, qbe.Temp(stmt.name), stmt.type, nil}
 		case:
 			gen_err_var_type(span_stmt.span, stmt) or_return
+		}
+
+		scope.vars[stmt.name] = Var {
+			stmt.name,
+			qbe.Temp(stmt.name),
+			stmt.type,
+			&scope.temp_vars[ptr_var_name],
 		}
 	case .Bool:
 		#partial switch value in stmt.value {
