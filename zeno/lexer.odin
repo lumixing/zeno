@@ -12,7 +12,7 @@ Lexer :: struct {
 	current: int,
 }
 
-lexer_scan :: proc(lexer: ^Lexer) {
+lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 	for !lexer_end(lexer^) {
 		lexer.start = lexer.current
 		char := lexer_advance(lexer)
@@ -24,7 +24,6 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			    lexer_peek(lexer^) == '\r' {
 				lexer.current += 1
 			}
-		// lexer_add(lexer, .Whitespace)
 		case '\n':
 			lexer_add(lexer, .Newline)
 		case '/':
@@ -34,7 +33,13 @@ lexer_scan :: proc(lexer: ^Lexer) {
 					lexer.current += 1
 				}
 			} else {
-				err_log(lexer.source, lexer.start, "expected another slash for a comment")
+				return error(lexer_span(lexer^), "Expected another slash for a comment")
+			}
+		case '.':
+			if lexer_advance(lexer) == '.' {
+				lexer_add(lexer, .DotDot)
+			} else {
+				return error(lexer_span(lexer^), "Expected another dot")
 			}
 		case '(':
 			lexer_add(lexer, .LParen)
@@ -48,6 +53,8 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			lexer_add(lexer, .Equals)
 		case ',':
 			lexer_add(lexer, .Comma)
+		case '@':
+			lexer_add(lexer, .At)
 		case '"':
 			terminated := true
 			str: [dynamic]u8
@@ -63,7 +70,7 @@ lexer_scan :: proc(lexer: ^Lexer) {
 						lexer.current += 1
 						append(&str, '\n')
 					} else {
-						err_log(lexer.source, lexer.current, "Invalid escape character.")
+						return error(lexer_span(lexer^), "Invalid character escape")
 					}
 					continue
 				}
@@ -72,7 +79,7 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			}
 
 			if !terminated {
-				err_log(lexer.source, lexer.start, "String is unterminated.")
+				return error(lexer_span(lexer^), "Unterminated string")
 			}
 
 			lexer.current += 1
@@ -86,9 +93,11 @@ lexer_scan :: proc(lexer: ^Lexer) {
 			name := string(lexer.source[lexer.start + 1:lexer.current])
 			switch name {
 			case "foreign":
-				lexer_add(lexer, .Directive, Directive.Foreign)
+				lexer_add(lexer, .Directive, .Foreign)
+			case "builtin":
+				lexer_add(lexer, .Directive, .Builtin)
 			case:
-				err_log(lexer.source, lexer.start, "%q is not a valid directive", name)
+				return error(lexer_span(lexer^), "%q is not a valid directive", name)
 			}
 		case:
 			if is_ident_char(char) {
@@ -106,12 +115,18 @@ lexer_scan :: proc(lexer: ^Lexer) {
 					lexer_add(lexer, .KW_Void)
 				case "bool":
 					lexer_add(lexer, .KW_Bool)
+				case "any":
+					lexer_add(lexer, .KW_Any)
+				case "ptr":
+					lexer_add(lexer, .KW_Ptr)
 				case "true":
 					lexer_add(lexer, .Bool, true)
 				case "false":
 					lexer_add(lexer, .Bool, false)
 				case "if":
 					lexer_add(lexer, .KW_If)
+				case "return":
+					lexer_add(lexer, .KW_Return)
 				case:
 					lexer_add(lexer, .Ident, ident)
 				}
@@ -123,16 +138,17 @@ lexer_scan :: proc(lexer: ^Lexer) {
 				str := string(lexer.source[lexer.start:lexer.current])
 				int_value, ok := strconv.parse_int(str)
 				if !ok {
-					err_log(lexer.source, lexer.start, "could not parse int %q", str)
+					return error(lexer_span(lexer^), "Could not parse int")
 				}
 				lexer_add(lexer, .Int, int_value)
 			} else {
-				err_log(lexer.source, lexer.start, "invalid char %c (%d)", char, char)
+				return error(lexer_span(lexer^), "Invalid character: %c (%d)", char, char)
 			}
 		}
 	}
 
 	lexer_add(lexer, .EOF)
+	return nil
 }
 
 lexer_advance :: proc(lexer: ^Lexer) -> u8 {
@@ -147,9 +163,12 @@ lexer_peek :: proc(lexer: Lexer) -> u8 {
 	return lexer.source[lexer.current]
 }
 
+lexer_span :: proc(lexer: Lexer) -> Span {
+	return {lexer.start, lexer.current}
+}
+
 lexer_add :: proc(lexer: ^Lexer, type: TokenType, value: TokenValue = nil) {
-	span := Span{lexer.start, lexer.current}
-	append(&lexer.tokens, Token{type, value, span})
+	append(&lexer.tokens, Token{type, value, lexer_span(lexer^)})
 }
 
 lexer_end :: proc(lexer: Lexer) -> bool {

@@ -3,223 +3,625 @@ package zeno
 import "../qbe"
 import "core:fmt"
 
+QbeOut :: struct {
+	datas: [dynamic]qbe.Data,
+	funcs: [dynamic]qbe.Func,
+}
+
+FuncKind :: enum {
+	Normal,
+	Foreign,
+	Builtin,
+}
+
 Func :: struct {
-	params:      []Param,
-	return_type: Type,
+	sign: FuncSign,
+	kind: FuncKind,
 }
 
 Var :: struct {
-	gid:  int,
-	type: Type,
-	name: union {
+	name:     string, // used when key isnt available
+	qbe_name: union {
 		qbe.Temp,
 		qbe.Glob,
 	},
+	type:     Type,
+	ptr:      Maybe(^Var),
 }
+
+Funcs :: map[string]Func
+Vars :: map[string]Var
 
 Scope :: struct {
-	parent:   Maybe(^Scope),
-	children: [dynamic]^Scope,
-	vars:     map[string]Var,
+	parent:    Maybe(^Scope),
+	children:  [dynamic]^Scope,
+	vars:      Vars,
+	temp_vars: Vars, // used to avoid dangling pointers for Var.ptr
 }
 
+// todo: remove global, global bad, grr
 gid := 0
-func_map: map[string]Func
-var_map: map[string]Var
-global_scope := Scope{nil, {}, {}}
 
-datas: [dynamic]qbe.Data
-funcs: [dynamic]qbe.Func
+gen_qbe :: proc(top_stmts: []Spanned(TopStmt)) -> (out: QbeOut, err: Maybe(Error)) {
+	funcs: Funcs
+	global_scope: Scope
 
-// todo: split code into procs
-gen_qbe :: proc(top_stmts: []TopStmt) -> ([]qbe.Data, []qbe.Func) {
-	for top_stmt in top_stmts {
-		switch tst in top_stmt {
-		case FuncDeclare:
-			scope := Scope{&global_scope, {}, {}}
-			append(&global_scope.children, &scope)
-
-			return_type := type_to_qbe_type(tst.return_type)
-			// todo: main func checking
-			if tst.name in func_map {
-				err_log({}, 0, "%q is already declared as a function.", tst.name)
-			}
-
-			func_map[tst.name] = {{}, tst.return_type}
-
-			params: [dynamic]qbe.Param
-			for par in tst.params {
-				#partial switch par.type {
-				case .String:
-					scope.vars[par.name] = {0, .String, qbe.Temp(par.name)}
-					append(&params, qbe.Param{par.name, .Long})
-				}
-			}
-
-			body: [dynamic]qbe.Stmt
-			append(&body, qbe.Label("start"))
-
-			for stmt in tst.body {
-				do_stmt(stmt, &body, &scope)
-			}
-
-			if tst.name == "main" {
-				return_type = .Word
-			}
-
-			append(&body, qbe.Instr(qbe.Return(tst.name == "main" ? 0 : nil)))
-
-			append(&funcs, qbe.Func{tst.name, return_type, params[:], true, body[:]})
-		case ForeignFuncDeclare:
-			if tst.name in func_map {
-				err_log({}, 0, "%q is already declared as a function.", tst.name)
-			}
-
-			func_map[tst.name] = {tst.params, tst.return_type}
+	for span_tstmt in top_stmts {
+		switch tstmt in span_tstmt.value {
+		case ForeignFuncDecl:
+			gen_func_decl(span_tstmt, &funcs, .Foreign, ForeignFuncDecl) or_return
+		case BuiltinFuncDecl:
+			gen_func_decl(span_tstmt, &funcs, .Builtin, BuiltinFuncDecl) or_return
+		case FuncDef:
+			gen_func_def(span_tstmt, &funcs, &out, &global_scope) or_return
 		}
 	}
 
-	// fmt.println(global_scope)
-	return datas[:], funcs[:]
+	return
 }
 
-do_stmt :: proc(stmt: Stmt, body: ^[dynamic]qbe.Stmt, scope: ^Scope) {
-	switch st in stmt {
+gen_func_decl :: proc(
+	span_tstmt: Spanned(TopStmt),
+	funcs: ^Funcs,
+	func_kind: FuncKind,
+	$T: typeid,
+) -> (
+	err: Maybe(Error),
+) {
+	assert(func_kind != .Normal)
+	// tstmt_type: typeid = BuiltinFuncDecl
+	// if func_kind == .Foreign {
+	// 	tstmt_type = ForeignFuncDecl
+	// }
+
+	tstmt := span_tstmt.value.(T)
+
+	gen_check_name_in_funcs(tstmt.sign.name, funcs^, span_tstmt.span) or_return
+
+	funcs[tstmt.sign.name] = Func{tstmt.sign, .Foreign}
+
+	return
+}
+
+gen_func_def :: proc(
+	span_tstmt: Spanned(TopStmt),
+	funcs: ^Funcs,
+	out: ^QbeOut,
+	global_scope: ^Scope,
+) -> (
+	err: Maybe(Error),
+) {
+	tstmt := span_tstmt.value.(FuncDef)
+
+	gen_check_name_in_funcs(tstmt.sign.name, funcs^, span_tstmt.span) or_return
+	// no need to check in scopes, funcs are higher in priority
+
+	funcs[tstmt.sign.name] = Func{tstmt.sign, .Normal}
+
+	scope: Scope
+	scope.parent = global_scope
+	// add scope to global_scope children?
+
+	func: qbe.Func
+	func.name = tstmt.sign.name
+	func.return_type = tstmt.sign.return_type == .Void ? nil : gen_type(tstmt.sign.return_type)
+
+	params: [dynamic]qbe.Param
+	for param in tstmt.sign.params {
+		gen_check_name_in_scope(param.name, scope, span_tstmt.span) or_return
+		gen_check_name_in_funcs(param.name, funcs^, span_tstmt.span) or_return
+
+		scope.vars[param.name] = Var{param.name, qbe.Temp(param.name), param.type, nil}
+
+		append(&params, qbe.Param{param.name, gen_type(param.type)})
+	}
+	func.params = params[:]
+
+	func.exported = true
+
+	body: [dynamic]qbe.Stmt
+	append(&body, qbe.Label("start"))
+
+	for stmt in tstmt.body {
+		stmts := gen_stmt(out, stmt, &scope, funcs^, funcs[tstmt.sign.name]) or_return
+		for stmt in stmts {
+			append(&body, stmt)
+		}
+	}
+
+	func.body = body[:]
+
+	append(&out.funcs, func)
+
+	return
+}
+
+gen_stmt :: proc(
+	out: ^QbeOut,
+	span_stmt: Spanned(Stmt),
+	scope: ^Scope,
+	funcs: Funcs,
+	func: Func,
+) -> (
+	qbe_stmts: []qbe.Stmt,
+	err: Maybe(Error),
+) {
+	qbe_stmts_dyn: [dynamic]qbe.Stmt
+
+	#partial switch stmt in span_stmt.value {
+	case VarDef:
+		qbe_stmts_dyn = gen_var_def(out, span_stmt, scope, funcs) or_return
+	case Return:
+		qbe_stmts_dyn = gen_return(out, span_stmt, scope, funcs, func) or_return
 	case FuncCall:
-		// todo: type checking for args
-		if st.name not_in func_map {
-			err_log({}, 0, "%q is not declared as a function.", st.name)
-		}
-
-		args: [dynamic]qbe.Arg
-		for arg in st.args {
-			// todo: remove partial!
-			#partial switch arg in arg {
-			case VarIdent:
-				// todo: also check name in func_map and vice versa
-				check_scope := scope
-				for {
-					if string(arg) not_in check_scope.vars {
-						if parent_scope, ok := check_scope.parent.?; ok {
-							check_scope = parent_scope
-						} else {
-							err_log({}, 0, "%q is not declared as a variable.", string(arg))
-							// break
-						}
-					} else {
-						break
-					}
-				}
-
-				var := check_scope.vars[string(arg)]
-				// todo: remove partial!
-				#partial switch var.type {
-				case .Int:
-					append(&args, qbe.Arg{.Word, var_name_to_value(var.name)})
-				case .String:
-					append(&args, qbe.Arg{.Long, var_name_to_value(var.name)})
-				case .Void:
-					fmt.panicf("variable %q has a type of void!", string(arg))
-				}
-			case string:
-				defer gid += 1
-				name := fmt.tprintf("%s.%d", ".strlit", gid)
-				append(&datas, qbe.Data{name, qbe.args_str(arg)})
-				append(&args, qbe.Arg{.Long, qbe.Glob(name)})
-			case int:
-				panic("unimpl!")
-			}
-		}
-		append(body, qbe.Instr(qbe.Call{st.name, args[:]}))
-	case VarDecl:
-		// todo: type checking between type and expr type
-		if st.name in scope.vars {
-			err_log({}, 0, "%q is already declared as a variable.", st.name)
-		}
-
-		defer gid += 1
-		name := fmt.tprintf("%s.%d", st.name, gid)
-		scope.vars[st.name] = {gid, st.type, qbe.Glob(name)}
-
-		type: qbe.Type
-		// todo: remove partial!
-		switch st.type {
-		case .Int:
-			defer gid += 1
-			name := fmt.tprintf("%s.%d", st.name, gid)
-			append(body, qbe.TempDef{name, .Word, qbe.Copy(st.value.(int))})
-		case .String:
-			defer gid += 1
-			name := fmt.tprintf("%s.%d", st.name, gid)
-			append(&datas, qbe.Data{name, qbe.args_str(st.value.(string))})
-		case .Bool:
-			defer gid += 1
-			name := fmt.tprintf("%s.%d", st.name, gid)
-			append(body, qbe.TempDef{name, .Word, qbe.Copy(st.value.(bool) ? 1 : 0)})
-		case .Void:
-			err_log({}, 0, "trying to declare variable %q of type void!", st.name)
-		}
-	case IfBranch:
-		// todo: expand this
-		if var_name, ok := st.cond.(VarIdent); ok {
-			if string(var_name) not_in scope.vars {
-				err_log({}, 0, "%q is not declared as a variable.", string(var_name))
-			}
-
-			var := scope.vars[string(var_name)]
-			if var.type != .Bool {
-				err_log(
-					{},
-					0,
-					"%q is of type %s but needed to be %s.",
-					string(var_name),
-					var.type,
-					Type.Bool,
-				)
-			}
-
-			append(body, qbe.Instr(qbe.CondJump{var_name_to_value(var.name), "true", "end"}))
-			append(body, qbe.Label("true"))
-			ifscope := Scope{scope, {}, {}}
-
-			for ifst in st.body {
-				do_stmt(ifst, body, &ifscope)
-			}
-			append(body, qbe.Label("end"))
-		} else {
-			err_log({}, 0, "Invalid boolean expression in if condition.")
-		}
-	case Block:
-		blockscope := Scope{scope, {}, {}}
-		for bst in st {
-			do_stmt(bst, body, &blockscope)
-		}
+		qbe_stmts_dyn = gen_func_call(out, span_stmt, scope, funcs) or_return
 	}
+
+	if len(qbe_stmts_dyn) != 0 {
+		append(&qbe_stmts_dyn, nil)
+	}
+
+	qbe_stmts = qbe_stmts_dyn[:]
+	return
 }
 
-// todo: very stupid, please come up with a better solution!!
-var_name_to_value :: proc(name: union {
-		qbe.Temp,
-		qbe.Glob,
-	}) -> qbe.Value {
-	switch n in name {
-	case qbe.Temp:
-		return qbe.Value(n)
-	case qbe.Glob:
-		return qbe.Value(n)
-	}
-	return {}
-}
+gen_var_def :: proc(
+	out: ^QbeOut,
+	span_stmt: Spanned(Stmt),
+	scope: ^Scope,
+	funcs: Funcs,
+) -> (
+	qbe_stmts: [dynamic]qbe.Stmt,
+	err: Maybe(Error),
+) {
+	stmt := span_stmt.value.(VarDef)
 
-type_to_qbe_type :: proc(type: Type) -> Maybe(qbe.Type) {
-	switch type {
-	case .Int, .Bool:
-		return .Word
+	gen_check_name_in_scope(stmt.name, scope^, span_stmt.span) or_return
+	gen_check_name_in_funcs(stmt.name, funcs, span_stmt.span) or_return
+
+	#partial switch stmt.type {
 	case .String:
-		return .Long
-	case .Void:
-		return nil
+		#partial switch value in stmt.value {
+		case string:
+			glob_name := fmt.tprintf("%s.str", stmt.name)
+			scope.vars[stmt.name] = Var{stmt.name, qbe.Glob(glob_name), stmt.type, nil}
+			append(&out.datas, qbe.Data{glob_name, qbe.args_str(value)})
+		case Ident:
+			var := gen_get_var(scope^, string(value), span_stmt.span) or_return
+			gen_same_type(stmt, var, span_stmt.span) or_return
+
+			scope.vars[stmt.name] = var
+		case:
+			gen_err_var_type(span_stmt.span, stmt) or_return
+		}
+	case .Int:
+		ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
+		ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
+		scope.temp_vars[ptr_var_name] = ptr_var
+		append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(i32)}})
+
+		#partial switch value in stmt.value {
+		case int:
+			append(&qbe_stmts, qbe.Instr(qbe.Store{.Word, value, gen_var_name_to_value(ptr_var)}))
+			append(
+				&qbe_stmts,
+				qbe.TempDef{stmt.name, .Word, qbe.Load{.Word, gen_var_name_to_value(ptr_var)}},
+			)
+		case Ident:
+			var := gen_get_var(scope^, string(value), span_stmt.span) or_return
+			gen_same_type(stmt, var, span_stmt.span) or_return
+
+			ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
+			ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
+			scope.temp_vars[ptr_var_name] = ptr_var
+
+			// might need to deref var to update its value!
+			append(
+				&qbe_stmts,
+				qbe.Instr(
+					qbe.Store{.Word, gen_var_name_to_value(var), gen_var_name_to_value(ptr_var)},
+				),
+			)
+			append(
+				&qbe_stmts,
+				qbe.TempDef{stmt.name, .Word, qbe.Load{.Word, gen_var_name_to_value(ptr_var)}},
+			)
+		case FuncCall:
+			// todo: check return type of func with var type!!!
+			spanned_value: Spanned(Stmt)
+			spanned_value.span = span_stmt.span
+			spanned_value.value = value
+			qbe_func_call_stmts := gen_func_call(out, spanned_value, scope, funcs) or_return
+
+			call_var_name := fmt.tprintf("%s.call", value.name)
+			append(
+				&qbe_stmts,
+				qbe.TempDef {
+					call_var_name,
+					gen_type(stmt.type),
+					qbe_func_call_stmts[0].(qbe.Instr),
+				},
+			)
+			append(
+				&qbe_stmts,
+				qbe.Instr(
+					qbe.Store{.Word, qbe.Temp(call_var_name), gen_var_name_to_value(ptr_var)},
+				),
+			)
+			append(
+				&qbe_stmts,
+				qbe.TempDef{stmt.name, .Word, qbe.Load{.Word, gen_var_name_to_value(ptr_var)}},
+			)
+		case:
+			gen_err_var_type(span_stmt.span, stmt) or_return
+		}
+
+		scope.vars[stmt.name] = Var {
+			stmt.name,
+			qbe.Temp(stmt.name),
+			stmt.type,
+			&scope.temp_vars[ptr_var_name],
+		}
+	case .Bool:
+		#partial switch value in stmt.value {
+		case bool:
+			scope.vars[stmt.name] = Var{stmt.name, qbe.Temp(stmt.name), stmt.type, nil}
+			append(
+				&qbe_stmts,
+				qbe.TempDef{stmt.name, gen_type(stmt.type), qbe.Copy(value ? 1 : 0)},
+			)
+		case Ident:
+			var := gen_get_var(scope^, string(value), span_stmt.span) or_return
+			gen_same_type(stmt, var, span_stmt.span) or_return
+
+			new_var := var
+			new_var.name = stmt.name
+			scope.vars[stmt.name] = new_var
+
+			// this might not work!
+			append(
+				&qbe_stmts,
+				qbe.TempDef{stmt.name, gen_type(stmt.type), qbe.Copy(gen_var_name_to_value(var))},
+			)
+		case:
+			gen_err_var_type(span_stmt.span, stmt) or_return
+		}
+	case .Pointer:
+		ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
+		ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
+		scope.temp_vars[ptr_var_name] = ptr_var
+		append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(i64)}})
+
+		#partial switch value in stmt.value {
+		case BuiltinFuncCall:
+			// todo: check return type of func with var type!!!
+			spanned_value: Spanned(Stmt)
+			spanned_value.span = span_stmt.span
+			spanned_value.value = gen_builtin_to_func_call(value)
+			qbe_func_call_stmts := gen_func_call(out, spanned_value, scope, funcs) or_return
+
+			switch value.name {
+			case "alloc":
+				alloc_var_name := fmt.tprintf("%s.call", value.name)
+				append(
+					&qbe_stmts,
+					qbe.TempDef {
+						alloc_var_name,
+						gen_type(stmt.type),
+						qbe.Alloc{.a8, value.args[0].(int)},
+					},
+				)
+				append(
+					&qbe_stmts,
+					qbe.Instr(
+						qbe.Store{.Long, qbe.Temp(alloc_var_name), gen_var_name_to_value(ptr_var)},
+					),
+				)
+				append(
+					&qbe_stmts,
+					qbe.TempDef{stmt.name, .Long, qbe.Load{.Long, gen_var_name_to_value(ptr_var)}},
+				)
+			case:
+				panic("invalid builtin function!!")
+			}
+		case:
+			unimplemented()
+		}
+	case:
+		unimplemented()
 	}
 
-	fmt.panicf("unreach (%v)", type)
+	return
+}
+
+gen_builtin_to_func_call :: proc(builtin: BuiltinFuncCall) -> FuncCall {
+	return {builtin.name, builtin.args}
+}
+
+gen_return :: proc(
+	out: ^QbeOut,
+	span_stmt: Spanned(Stmt),
+	scope: ^Scope,
+	funcs: Funcs,
+	func: Func,
+) -> (
+	qbe_stmt: [dynamic]qbe.Stmt,
+	err: Maybe(Error),
+) {
+	stmt := span_stmt.value.(Return)
+
+	if value, value_ok := stmt.value.?; value_ok {
+		#partial switch func.sign.return_type {
+		case .Int:
+			#partial switch value in value {
+			case int:
+				append(&qbe_stmt, qbe.Instr(qbe.Return(value)))
+			case Ident:
+				var := gen_get_var(scope^, string(value), span_stmt.span) or_return
+				gen_same_type(func, var, span_stmt.span) or_return
+
+				append(&qbe_stmt, qbe.Instr(qbe.Return(gen_var_name_to_value(var))))
+			case:
+				err = gen_same_type(func, value, span_stmt.span)
+				assert(err != nil)
+				return
+			}
+		case .Void:
+			if value, value_ok := stmt.value.?; value_ok {
+				err = gen_same_type(func, value, span_stmt.span)
+				assert(err != nil)
+				return
+			}
+
+			append(&qbe_stmt, qbe.Instr(qbe.Return(nil)))
+		}
+	} else {
+		if func.sign.return_type != .Void {
+			err = gen_same_type(func, Param{"_return_", .Void, false}, span_stmt.span)
+			assert(err != nil)
+			return
+		}
+
+		append(&qbe_stmt, qbe.Instr(qbe.Return(nil)))
+	}
+
+	return
+}
+
+gen_func_call :: proc(
+	out: ^QbeOut,
+	span_stmt: Spanned(Stmt),
+	scope: ^Scope,
+	funcs: Funcs,
+) -> (
+	qbe_stmt: [dynamic]qbe.Stmt,
+	err: Maybe(Error),
+) {
+	stmt := span_stmt.value.(FuncCall)
+
+	if stmt.name not_in funcs {
+		err = error(span_stmt.span, "Function %q is not defined", stmt.name)
+		return
+	}
+
+	func := funcs[stmt.name]
+
+	// todo: variadic
+	has_variadic :=
+		len(func.sign.params) != 0 && func.sign.params[len(func.sign.params) - 1].variadic
+
+	if !has_variadic && len(func.sign.params) != len(stmt.args) {
+		err = error(
+			span_stmt.span,
+			"Function %q expected %d arguments but got %d",
+			stmt.name,
+			len(func.sign.params),
+			len(stmt.args),
+		)
+		return
+	}
+
+	args: [dynamic]qbe.Arg
+
+	for arg, i in stmt.args {
+		params_len := len(func.sign.params)
+		// param := i < params_len ? func.sign.params[i] : func.sign.params[params_len - 1]
+		param := func.sign.params[i < params_len ? i : params_len - 1]
+
+		if _, is_ident := arg.(Ident); !is_ident {
+			gen_same_type(param, arg, span_stmt.span) or_return
+		}
+
+		#partial switch arg in arg {
+		case string:
+			defer gid += 1
+			str_name := fmt.tprintf("%s.%s.str.%d", func.sign.name, param.name, gid)
+			append(&out.datas, qbe.Data{str_name, qbe.args_str(arg)})
+			append(&args, qbe.Arg{.Long, qbe.Glob(str_name)})
+		case int:
+			append(&args, qbe.Arg{.Long, arg})
+		case Ident:
+			var := gen_get_var(scope^, string(arg), span_stmt.span) or_return
+			gen_same_type(param, var, span_stmt.span) or_return
+
+			append(&args, qbe.Arg{gen_type(var.type), gen_var_name_to_value(var)})
+		case:
+			unimplemented()
+		}
+	}
+
+	append(&qbe_stmt, qbe.Instr(qbe.Call{stmt.name, args[:]}))
+
+	return
+}
+
+Typable :: union #no_nil {
+	Var,
+	Func,
+	Expr,
+	Param,
+	VarDef,
+	// FuncCall, // remove this and add Func to FuncCall as field, epiphany
+}
+
+gen_typable_type :: proc(typable: Typable) -> (type: Type) {
+	switch t in typable {
+	case Var:
+		type = t.type
+	case Func:
+		type = t.sign.return_type
+	case Expr:
+		type = gen_expr_to_type(t)
+	case Param:
+		type = t.type
+	case VarDef:
+		type = t.type
+	}
+
+	return
+}
+
+gen_typable_main_str :: proc(typable: Typable) -> (str: string) {
+	type := gen_typable_type(typable)
+
+	switch t in typable {
+	case Var:
+		str = fmt.tprintf("Variable %q expected type %v", t.name, type)
+	case Func:
+		str = fmt.tprintf("Function %q expected return type %v", t.sign.name, type)
+	case Expr:
+		unimplemented()
+	case Param:
+		str = fmt.tprintf("Parameter %q expected type %v", t.name, type)
+	case VarDef:
+		str = fmt.tprintf("Variable %q expected type %v", t.name, type)
+	}
+
+	return
+}
+
+gen_typable_sec_str :: proc(typable: Typable) -> (str: string) {
+	type := gen_typable_type(typable)
+
+	switch t in typable {
+	case Var:
+		str = fmt.tprintf("but variable %q is %v", t.name, type)
+	case Func:
+		str = fmt.tprintf("but function %q return type is %v", t.sign.name, type)
+	case Expr:
+		str = fmt.tprintf("but %v is %v", t, type)
+	case Param:
+		str = fmt.tprintf("but parameter %q is %v", t.name, type)
+	case VarDef:
+		str = fmt.tprintf("but variable %q is %v", t.name, type)
+	}
+
+	return
+}
+
+gen_same_type :: proc(main: Typable, sec: Typable, span: Span) -> (err: Maybe(Error)) {
+	main_type := gen_typable_type(main)
+	sec_type := gen_typable_type(sec)
+
+	if (main_type != .Any) && (main_type != sec_type) {
+		main_str := gen_typable_main_str(main)
+		sec_str := gen_typable_sec_str(sec)
+
+		err = error(span, "%s %s", main_str, sec_str)
+	}
+
+	return
+}
+
+// todo: recursive parents
+gen_get_var :: proc(scope: Scope, name: string, span: Span) -> (var: Var, err: Maybe(Error)) {
+	if name not_in scope.vars {
+		err = error(span, "Variable %q is not declared", name)
+		return
+	}
+
+	var = scope.vars[name]
+	return
+}
+
+gen_get_func :: proc(funcs: Funcs, name: string, span: Span) -> (func: Func, err: Maybe(Error)) {
+	if name not_in funcs {
+		err = error(span, "Function %q is not declared", name)
+		return
+	}
+
+	func = funcs[name]
+	return
+}
+
+gen_expr_to_type :: proc(expr: Expr) -> (type: Type) {
+	switch value in expr {
+	case string:
+		type = .String
+	case int:
+		type = .Int
+	case bool:
+		type = .Bool
+	case Ident:
+		unimplemented()
+	case FuncCall:
+		unimplemented()
+	case BuiltinFuncCall:
+		unimplemented()
+	}
+
+	return
+}
+
+gen_var_name_to_value :: proc(var: Var) -> (value: qbe.Value) {
+	switch name in var.qbe_name {
+	case qbe.Glob:
+		value = name
+	case qbe.Temp:
+		value = name
+	}
+
+	return
+}
+
+gen_err_var_type :: proc(span: Span, stmt: VarDef) -> Maybe(Error) {
+	return error(
+		span,
+		"Variable %q expected %v as a value but got %v",
+		stmt.name,
+		stmt.type,
+		stmt.value,
+	)
+}
+
+gen_check_name_in_funcs :: proc(name: string, funcs: Funcs, span: Span) -> (err: Maybe(Error)) {
+	if name in funcs {
+		err = error(span, "%q is already declared as a function", name)
+	}
+
+	return
+}
+
+gen_check_name_in_scope :: proc(name: string, scope: Scope, span: Span) -> (err: Maybe(Error)) {
+	// todo: recursive for parent
+	if name in scope.vars {
+		err = error(span, "%q is already declared as a variable", name)
+	}
+
+	return
+}
+
+gen_type :: proc(type: Type) -> (qbe_type: qbe.Type) {
+	switch type {
+	case .Any:
+		unimplemented()
+	case .Bool, .Int:
+		qbe_type = .Word
+	case .String, .Pointer:
+		qbe_type = .Long
+	case .Void:
+		qbe_type = nil
+	}
+
+	return
 }

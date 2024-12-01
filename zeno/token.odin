@@ -22,6 +22,8 @@ TokenType :: enum {
 	RBrace,
 	Equals,
 	Comma,
+	DotDot,
+	At,
 
 	// literals
 	String,
@@ -33,7 +35,10 @@ TokenType :: enum {
 	KW_Str,
 	KW_Void,
 	KW_Bool,
+	KW_Any,
+	KW_Ptr,
 	KW_If,
+	KW_Return,
 }
 
 TokenValue :: union {
@@ -45,8 +50,13 @@ TokenValue :: union {
 
 Directive :: enum {
 	Foreign,
+	Builtin,
 }
 
 Span :: struct {
 	lo, hi: int,
+}
+
+span :: proc(lo: int) -> Span {
+	return {lo, lo}
 }

@@ -1,33 +1,63 @@
 package zeno
 
+Spanned :: struct($T: typeid) {
+	span:  Span,
+	value: T,
+}
+
 TopStmt :: union {
-	FuncDeclare,
-	ForeignFuncDeclare,
+	FuncDef,
+	ForeignFuncDecl,
+	BuiltinFuncDecl,
 }
 
-FuncDeclare :: struct {
-	name:        string,
-	params:      []Param,
-	body:        []Stmt,
-	return_type: Type,
-}
-
-ForeignFuncDeclare :: struct {
+FuncSign :: struct {
 	name:        string,
 	params:      []Param,
 	return_type: Type,
+}
+
+FuncDef :: struct {
+	sign: FuncSign,
+	body: Block,
+}
+
+Block :: []Spanned(Stmt)
+
+ForeignFuncDecl :: struct {
+	sign: FuncSign,
+}
+
+BuiltinFuncDecl :: struct {
+	sign: FuncSign,
 }
 
 Param :: struct {
-	name: string,
-	type: Type,
+	name:     string,
+	type:     Type,
+	variadic: bool,
+}
+
+Type :: enum {
+	Void,
+	String,
+	Int,
+	Bool,
+	Any,
+	Pointer,
 }
 
 Stmt :: union {
+	VarDef,
 	FuncCall,
-	VarDecl,
-	IfBranch,
-	Block,
+	Return,
+	BuiltinFuncCall,
+}
+
+VarDef :: struct {
+	name:  string,
+	type:  Type,
+	value: Expr,
 }
 
 FuncCall :: struct {
@@ -35,31 +65,19 @@ FuncCall :: struct {
 	args: []Expr,
 }
 
-VarDecl :: struct {
-	name:  string,
-	type:  Type,
-	value: Expr,
+BuiltinFuncCall :: distinct FuncCall
+
+Return :: struct {
+	value: Maybe(Expr),
 }
 
-IfBranch :: struct {
-	cond: Expr,
-	body: []Stmt,
-}
-
-Block :: distinct []Stmt
-
-VarIdent :: distinct string
-
-Expr :: union {
-	VarIdent,
+Expr :: union #no_nil {
 	string,
 	int,
 	bool,
+	Ident,
+	FuncCall,
+	BuiltinFuncCall,
 }
 
-Type :: enum {
-	Void,
-	Int,
-	String,
-	Bool,
-}
+Ident :: distinct string

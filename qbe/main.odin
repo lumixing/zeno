@@ -42,6 +42,9 @@ main :: proc() {
 	append(&body, Label("start"))
 	append(&body, Instr(Call{"puts", {{.Long, Glob(".0")}}}))
 	append(&body, Instr(Call{"puts", {{.Long, Glob(".1")}}}))
+	append(&body, TempDef{"file.ptr", .Long, Alloc{.a8, 8}})
+	append(&body, Instr(Store{.Long, 69420, Temp("file.ptr")}))
+	append(&body, TempDef{"file", .Long, Load{.Long, Temp("file.ptr")}})
 	append(&body, Instr(Return(0)))
 	append(&funcs, Func{"main", .Word, {}, true, body[:]})
 
@@ -79,6 +82,8 @@ bake :: proc(datas: []Data, funcs: []Func) -> string {
 				)
 			case Instr:
 				append(&lines, fmt.tprintfln("\t%s", instr(st)))
+			case nil:
+				append(&lines, "\n")
 			}
 		}
 	}
@@ -101,6 +106,17 @@ instr :: proc(instr: Instr) -> string {
 			ins.non_zero_label,
 			ins.zero_label,
 		)
+	case Alloc:
+		return fmt.tprintf("alloc%d %s", ins.align, value(Value(ins.size)))
+	case Store:
+		return fmt.tprintf(
+			"store%s %s, %s",
+			type_to_str(ins.type),
+			value(Value(ins.value)),
+			value(Value(ins.address)),
+		)
+	case Load:
+		return fmt.tprintf("load%s %s", type_to_str(ins.type), value(Value(ins.address)))
 	}
 
 	return "INVALID_INSTR"
