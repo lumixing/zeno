@@ -53,6 +53,8 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 			lexer_add(lexer, .Equals)
 		case ',':
 			lexer_add(lexer, .Comma)
+		case '@':
+			lexer_add(lexer, .At)
 		case '"':
 			terminated := true
 			str: [dynamic]u8
@@ -91,9 +93,11 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 			name := string(lexer.source[lexer.start + 1:lexer.current])
 			switch name {
 			case "foreign":
-				lexer_add(lexer, .Directive, Directive.Foreign)
+				lexer_add(lexer, .Directive, .Foreign)
+			case "builtin":
+				lexer_add(lexer, .Directive, .Builtin)
 			case:
-				return error(lexer_span(lexer^), "Invalid directive")
+				return error(lexer_span(lexer^), "%q is not a valid directive", name)
 			}
 		case:
 			if is_ident_char(char) {

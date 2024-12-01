@@ -23,6 +23,7 @@ TokenType :: enum {
 	Equals,
 	Comma,
 	DotDot,
+	At,
 
 	// literals
 	String,
@@ -49,6 +50,7 @@ TokenValue :: union {
 
 Directive :: enum {
 	Foreign,
+	Builtin,
 }
 
 Span :: struct {

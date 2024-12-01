@@ -8,9 +8,15 @@ QbeOut :: struct {
 	funcs: [dynamic]qbe.Func,
 }
 
+FuncKind :: enum {
+	Normal,
+	Foreign,
+	Builtin,
+}
+
 Func :: struct {
-	sign:       FuncSign,
-	is_foreign: bool,
+	sign: FuncSign,
+	kind: FuncKind,
 }
 
 Var :: struct {
@@ -43,7 +49,9 @@ gen_qbe :: proc(top_stmts: []Spanned(TopStmt)) -> (out: QbeOut, err: Maybe(Error
 	for span_tstmt in top_stmts {
 		switch tstmt in span_tstmt.value {
 		case ForeignFuncDecl:
-			gen_foreign_func_decl(span_tstmt, &funcs) or_return
+			gen_func_decl(span_tstmt, &funcs, .Foreign, ForeignFuncDecl) or_return
+		case BuiltinFuncDecl:
+			gen_func_decl(span_tstmt, &funcs, .Builtin, BuiltinFuncDecl) or_return
 		case FuncDef:
 			gen_func_def(span_tstmt, &funcs, &out, &global_scope) or_return
 		}
@@ -52,12 +60,25 @@ gen_qbe :: proc(top_stmts: []Spanned(TopStmt)) -> (out: QbeOut, err: Maybe(Error
 	return
 }
 
-gen_foreign_func_decl :: proc(span_tstmt: Spanned(TopStmt), funcs: ^Funcs) -> (err: Maybe(Error)) {
-	tstmt := span_tstmt.value.(ForeignFuncDecl)
+gen_func_decl :: proc(
+	span_tstmt: Spanned(TopStmt),
+	funcs: ^Funcs,
+	func_kind: FuncKind,
+	$T: typeid,
+) -> (
+	err: Maybe(Error),
+) {
+	assert(func_kind != .Normal)
+	// tstmt_type: typeid = BuiltinFuncDecl
+	// if func_kind == .Foreign {
+	// 	tstmt_type = ForeignFuncDecl
+	// }
+
+	tstmt := span_tstmt.value.(T)
 
 	gen_check_name_in_funcs(tstmt.sign.name, funcs^, span_tstmt.span) or_return
 
-	funcs[tstmt.sign.name] = Func{tstmt.sign, true}
+	funcs[tstmt.sign.name] = Func{tstmt.sign, .Foreign}
 
 	return
 }
@@ -75,7 +96,7 @@ gen_func_def :: proc(
 	gen_check_name_in_funcs(tstmt.sign.name, funcs^, span_tstmt.span) or_return
 	// no need to check in scopes, funcs are higher in priority
 
-	funcs[tstmt.sign.name] = Func{tstmt.sign, false}
+	funcs[tstmt.sign.name] = Func{tstmt.sign, .Normal}
 
 	scope: Scope
 	scope.parent = global_scope
@@ -265,11 +286,56 @@ gen_var_def :: proc(
 		case:
 			gen_err_var_type(span_stmt.span, stmt) or_return
 		}
+	case .Pointer:
+		ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
+		ptr_var := Var{ptr_var_name, qbe.Temp(ptr_var_name), .Pointer, nil}
+		scope.temp_vars[ptr_var_name] = ptr_var
+		append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(i64)}})
+
+		#partial switch value in stmt.value {
+		case BuiltinFuncCall:
+			// todo: check return type of func with var type!!!
+			spanned_value: Spanned(Stmt)
+			spanned_value.span = span_stmt.span
+			spanned_value.value = gen_builtin_to_func_call(value)
+			qbe_func_call_stmts := gen_func_call(out, spanned_value, scope, funcs) or_return
+
+			switch value.name {
+			case "alloc":
+				alloc_var_name := fmt.tprintf("%s.call", value.name)
+				append(
+					&qbe_stmts,
+					qbe.TempDef {
+						alloc_var_name,
+						gen_type(stmt.type),
+						qbe.Alloc{.a8, value.args[0].(int)},
+					},
+				)
+				append(
+					&qbe_stmts,
+					qbe.Instr(
+						qbe.Store{.Long, qbe.Temp(alloc_var_name), gen_var_name_to_value(ptr_var)},
+					),
+				)
+				append(
+					&qbe_stmts,
+					qbe.TempDef{stmt.name, .Long, qbe.Load{.Long, gen_var_name_to_value(ptr_var)}},
+				)
+			case:
+				panic("invalid builtin function!!")
+			}
+		case:
+			unimplemented()
+		}
 	case:
 		unimplemented()
 	}
 
 	return
+}
+
+gen_builtin_to_func_call :: proc(builtin: BuiltinFuncCall) -> FuncCall {
+	return {builtin.name, builtin.args}
 }
 
 gen_return :: proc(
@@ -499,6 +565,8 @@ gen_expr_to_type :: proc(expr: Expr) -> (type: Type) {
 	case Ident:
 		unimplemented()
 	case FuncCall:
+		unimplemented()
+	case BuiltinFuncCall:
 		unimplemented()
 	}
 

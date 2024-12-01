@@ -8,6 +8,7 @@ Spanned :: struct($T: typeid) {
 TopStmt :: union {
 	FuncDef,
 	ForeignFuncDecl,
+	BuiltinFuncDecl,
 }
 
 FuncSign :: struct {
@@ -24,6 +25,10 @@ FuncDef :: struct {
 Block :: []Spanned(Stmt)
 
 ForeignFuncDecl :: struct {
+	sign: FuncSign,
+}
+
+BuiltinFuncDecl :: struct {
 	sign: FuncSign,
 }
 
@@ -46,6 +51,7 @@ Stmt :: union {
 	VarDef,
 	FuncCall,
 	Return,
+	BuiltinFuncCall,
 }
 
 VarDef :: struct {
@@ -59,6 +65,8 @@ FuncCall :: struct {
 	args: []Expr,
 }
 
+BuiltinFuncCall :: distinct FuncCall
+
 Return :: struct {
 	value: Maybe(Expr),
 }
@@ -69,6 +77,7 @@ Expr :: union #no_nil {
 	bool,
 	Ident,
 	FuncCall,
+	BuiltinFuncCall,
 }
 
 Ident :: distinct string

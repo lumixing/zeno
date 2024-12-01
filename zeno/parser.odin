@@ -30,6 +30,8 @@ prs_top_stmt :: proc(prs: ^Parser) -> (top_stmt: Maybe(Spanned(TopStmt)), err: M
 		switch token.value.(Directive) {
 		case .Foreign:
 			top_stmt = prs_foreign_dir(prs) or_return
+		case .Builtin:
+			top_stmt = prs_builtin_dir(prs) or_return
 		}
 	case .EOF, .Newline:
 		prs.current += 1
@@ -111,6 +113,18 @@ prs_foreign_dir :: proc(prs: ^Parser) -> (foreign_dir: Spanned(TopStmt), err: Ma
 
 	foreign_dir.span = span
 	foreign_dir.value = ForeignFuncDecl{sign}
+	return
+}
+
+prs_builtin_dir :: proc(prs: ^Parser) -> (builtin_dir: Spanned(TopStmt), err: Maybe(Error)) {
+	span := prs_peek(prs^).span
+
+	prs_expect(prs, .Directive) or_return
+	sign := prs_func_sign(prs) or_return
+	prs_expect(prs, .Newline) or_return
+
+	builtin_dir.span = span
+	builtin_dir.value = BuiltinFuncDecl{sign}
 	return
 }
 
@@ -237,6 +251,10 @@ prs_expr :: proc(prs: ^Parser) -> (expr: Expr, err: Maybe(Error)) {
 	case .Bool:
 		prs.current += 1
 		expr = token.value.(bool)
+	case .At:
+		prs.current += 1
+		func_call := prs_func_call(prs) or_return
+		expr = BuiltinFuncCall(func_call.value.(FuncCall))
 	case:
 		cons := prs.current - init_current
 		err = error(token.span, "Expected expression but got %v", token.type, consumed = cons)
@@ -289,6 +307,8 @@ prs_type :: proc(prs: ^Parser) -> (type: Type, err: Maybe(Error)) {
 		type = .Bool
 	case .KW_Any:
 		type = .Any
+	case .KW_Ptr:
+		type = .Pointer
 	case:
 		cons := prs.current - init_current
 		err = error(token.span, "Expected type but got %v", token.type, consumed = cons)
