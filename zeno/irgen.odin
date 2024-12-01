@@ -73,7 +73,7 @@ gen_func_def :: proc(
 	tstmt := span_tstmt.value.(FuncDef)
 
 	gen_check_name_in_funcs(tstmt.sign.name, funcs^, span_tstmt.span) or_return
-	// todo: check in scope aswell
+	// no need to check in scopes, funcs are higher in priority
 
 	funcs[tstmt.sign.name] = Func{tstmt.sign, false}
 

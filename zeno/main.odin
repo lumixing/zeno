@@ -6,6 +6,7 @@ import "core:flags"
 import "core:fmt"
 import "core:os"
 import "core:strings"
+import "core:time"
 
 Subcmd :: enum {
 	run,
@@ -22,12 +23,14 @@ Options :: struct {
 	print_qbe:    bool `args:"name=qbe"`,
 	keep_ssa:     bool `args:"name=ssa"`,
 	keep_bin:     bool `args:"name=bin"`,
+	show_timings: bool `args:"name=time"`,
 }
 
 main :: proc() {
 	opt: Options
 	flags.parse_or_exit(&opt, os.args)
 
+	lexer_time := time.now()
 	lexer := new(Lexer)
 
 	data, ok := os.read_entire_file(opt.input)
@@ -52,6 +55,11 @@ main :: proc() {
 		}
 	}
 
+	if opt.show_timings {
+		fmt.printfln("Lexer timing:  %v ns", time.duration_nanoseconds(time.since(lexer_time)))
+	}
+
+	parser_time := time.now()
 	parser := new(Parser)
 	// parser.source = data
 	parser.tokens = lexer.tokens[:]
@@ -67,10 +75,15 @@ main :: proc() {
 		}
 	}
 
+	if opt.show_timings {
+		fmt.printfln("Parser timing: %v ns", time.duration_nanoseconds(time.since(parser_time)))
+	}
+
 	if opt.subcmd == .parse {
 		return
 	}
 
+	gen_time := time.now()
 	out, qbe_err := gen_qbe(parser.top_stmts[:])
 	if err, ok := qbe_err.?; ok {
 		fmt.printfln("Error at %v:%v: %v", get_line_col(data, err.location.lo), err.message)
@@ -82,6 +95,11 @@ main :: proc() {
 
 	if opt.print_qbe {
 		fmt.println(qbestr)
+	}
+
+	if opt.show_timings {
+		fmt.printfln("IR gen timing: %v ns", time.duration_nanoseconds(time.since(gen_time)))
+		fmt.printfln("Total timing:  %v ns", time.duration_nanoseconds(time.since(lexer_time)))
 	}
 
 	if opt.subcmd == .run {
