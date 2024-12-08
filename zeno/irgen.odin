@@ -41,6 +41,10 @@ Var :: struct {
 	ptr:      Maybe(^Var),
 }
 
+var_new_temp :: proc(name: string, type: Type, ptr: Maybe(^Var) = nil) -> Var {
+	return Var{name = name, qbe_name = qbe.Temp(name), type = type, ptr = ptr}
+}
+
 gen_qbe :: proc(top_stmts: []Spanned(TopStmt)) -> (out: Gen, err: Maybe(Error)) {
 	gen: Gen
 
@@ -106,10 +110,7 @@ gen_func_def :: proc(gen: ^Gen, span_tstmt: Spanned(TopStmt)) -> (err: Maybe(Err
 		gen_check_name_in_funcs(gen^, tstmt.sign.name, span_tstmt.span) or_return
 		gen_check_name_in_scope(scope^, tstmt.sign.name, span_tstmt.span) or_return
 
-		scope.vars[param.name] = Var {
-			name     = param.name,
-			qbe_name = qbe.Temp(param.name),
-		}
+		scope.vars[param.name] = var_new_temp(param.name, param.type)
 
 		append(&params, qbe.Param{name = param.name, type = gen_type(param.type)})
 	}
@@ -180,19 +181,10 @@ gen_var_def :: proc(
 			ptr_var_type := new_clone(PointerType(.Int))
 
 			// mem: free me!!
-			ptr_var := new_clone(
-				Var{name = ptr_var_name, qbe_name = qbe.Temp(ptr_var_name), type = ptr_var_type},
-			)
-
+			ptr_var := new_clone(var_new_temp(ptr_var_name, ptr_var_type))
 			scope.vars[ptr_var_name] = ptr_var^
 
-			var := Var {
-				name     = stmt.name,
-				qbe_name = qbe.Temp(stmt.name),
-				type     = .Int,
-				ptr      = ptr_var,
-			}
-
+			var := var_new_temp(stmt.name, .Int, ptr_var)
 			scope.vars[stmt.name] = var
 
 			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(i32)}})
@@ -203,19 +195,11 @@ gen_var_def :: proc(
 					gen_err_var_type(span_stmt.span, stmt) or_return
 				}
 
-				append(
-					&qbe_stmts,
-					qbe.Instr(qbe.Store{gen_type(type), value.(int), gen_var_to_value(ptr_var^)}),
-				)
+				store_instr := qbe.Store{gen_type(type), value.(int), gen_var(ptr_var^)}
+				append(&qbe_stmts, qbe.Instr(store_instr))
 
-				append(
-					&qbe_stmts,
-					qbe.TempDef {
-						stmt.name,
-						gen_type(type),
-						qbe.Load{.Word, gen_var_to_value(ptr_var^)},
-					},
-				)
+				load_instr := qbe.Load{.Word, gen_var(ptr_var^)}
+				append(&qbe_stmts, qbe.TempDef{stmt.name, gen_type(type), load_instr})
 			case Variable:
 				var := gen_get_var(scope^, string(value), span_stmt.span) or_return
 
@@ -231,25 +215,11 @@ gen_var_def :: proc(
 					return
 				}
 
-				append(
-					&qbe_stmts,
-					qbe.Instr(
-						qbe.Store {
-							gen_type(type),
-							gen_var_to_value(var),
-							gen_var_to_value(ptr_var^),
-						},
-					),
-				)
+				store_instr := qbe.Store{gen_type(type), gen_var(var), gen_var(ptr_var^)}
+				append(&qbe_stmts, qbe.Instr(store_instr))
 
-				append(
-					&qbe_stmts,
-					qbe.TempDef {
-						stmt.name,
-						gen_type(type),
-						qbe.Load{.Word, gen_var_to_value(ptr_var^)},
-					},
-				)
+				load_instr := qbe.Load{.Word, gen_var(ptr_var^)}
+				append(&qbe_stmts, qbe.TempDef{stmt.name, gen_type(type), load_instr})
 			}
 		}
 	}
@@ -314,7 +284,7 @@ gen_err_var_type :: proc(span: Span, stmt: VarDef) -> Maybe(Error) {
 	)
 }
 
-gen_var_to_value :: proc(var: Var) -> (value: qbe.Value) {
+gen_var :: proc(var: Var) -> (value: qbe.Value) {
 	switch name in var.qbe_name {
 	case qbe.Glob:
 		value = name
