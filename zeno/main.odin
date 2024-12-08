@@ -24,6 +24,7 @@ Options :: struct {
 	keep_ssa:     bool `args:"name=ssa"`,
 	keep_bin:     bool `args:"name=bin"`,
 	show_timings: bool `args:"name=time"`,
+	show_scopes:  bool `args:"name=scopes"`,
 }
 
 main :: proc() {
@@ -90,7 +91,24 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	qbestr := qbe.bake(out.datas[:], out.funcs[:])
+	if opt.show_scopes {
+		for child in out.scope.children {
+			for _, var in child.vars {
+				if strings.ends_with(var.name, ".ptr") do continue
+				fmt.printfln("%v (%s) -> %v", var.name, var.qbe_name, var.type)
+				if ptr, ok := var.ptr.?; ok {
+					// fmt.println(ptr)
+					fmt.printfln("\t%v (%s) -> %v", ptr.name, ptr.qbe_name, ptr.type)
+				}
+			}
+		}
+	}
+
+	for c in out.scope.children {
+		free(c)
+	}
+
+	qbestr := qbe.bake(out.out.datas[:], out.out.funcs[:])
 	os.write_entire_file("samples/out.ssa", transmute([]u8)qbestr)
 
 	if opt.print_qbe {

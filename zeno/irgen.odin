@@ -26,12 +26,9 @@ FuncKind :: enum {
 }
 
 Scope :: struct {
-	parent:         Maybe(^Scope),
-	children:       [dynamic]^Scope,
-	vars:           map[string]Var,
-	// might need to move these to a higher scope!
-	temp_vars:      map[string]Var,
-	temp_ptr_types: map[string]^PointerType,
+	parent:   Maybe(^Scope),
+	children: [dynamic]^Scope,
+	vars:     map[string]Var,
 }
 
 Var :: struct {
@@ -44,7 +41,7 @@ Var :: struct {
 	ptr:      Maybe(^Var),
 }
 
-gen_qbe :: proc(top_stmts: []Spanned(TopStmt)) -> (out: QbeOut, err: Maybe(Error)) {
+gen_qbe :: proc(top_stmts: []Spanned(TopStmt)) -> (out: Gen, err: Maybe(Error)) {
 	gen: Gen
 
 	for span_tstmt in top_stmts {
@@ -58,7 +55,7 @@ gen_qbe :: proc(top_stmts: []Spanned(TopStmt)) -> (out: QbeOut, err: Maybe(Error
 		}
 	}
 
-	out = gen.out
+	out = gen
 	return
 }
 
@@ -94,8 +91,9 @@ gen_func_def :: proc(gen: ^Gen, span_tstmt: Spanned(TopStmt)) -> (err: Maybe(Err
 		kind = .Normal,
 	}
 
-	scope: Scope
+	scope := new(Scope)
 	scope.parent = &gen.scope
+	append(&gen.scope.children, scope)
 
 	qbe_func := qbe.Func {
 		name        = tstmt.sign.name,
@@ -106,7 +104,7 @@ gen_func_def :: proc(gen: ^Gen, span_tstmt: Spanned(TopStmt)) -> (err: Maybe(Err
 	params: [dynamic]qbe.Param
 	for param in tstmt.sign.params {
 		gen_check_name_in_funcs(gen^, tstmt.sign.name, span_tstmt.span) or_return
-		gen_check_name_in_scope(scope, tstmt.sign.name, span_tstmt.span) or_return
+		gen_check_name_in_scope(scope^, tstmt.sign.name, span_tstmt.span) or_return
 
 		scope.vars[param.name] = Var {
 			name     = param.name,
@@ -121,7 +119,7 @@ gen_func_def :: proc(gen: ^Gen, span_tstmt: Spanned(TopStmt)) -> (err: Maybe(Err
 	append(&body, qbe.Label("start"))
 
 	for stmt in tstmt.body {
-		stmts := gen_stmt(gen, stmt, &scope, gen.funcs[tstmt.sign.name]) or_return
+		stmts := gen_stmt(gen, stmt, scope, gen.funcs[tstmt.sign.name]) or_return
 		for stmt in stmts {
 			append(&body, stmt)
 		}
@@ -178,22 +176,21 @@ gen_var_def :: proc(
 		#partial switch type {
 		case .Int:
 			ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
-			ptr_var_type := PointerType(.Int)
-			scope.temp_ptr_types[ptr_var_name] = &ptr_var_type
+			// mem: free me!!
+			ptr_var_type := new_clone(PointerType(.Int))
 
-			ptr_var := Var {
-				name     = ptr_var_name,
-				qbe_name = qbe.Temp(ptr_var_name),
-				type     = scope.temp_ptr_types[ptr_var_name],
-			}
+			// mem: free me!!
+			ptr_var := new_clone(
+				Var{name = ptr_var_name, qbe_name = qbe.Temp(ptr_var_name), type = ptr_var_type},
+			)
 
-			scope.temp_vars[ptr_var_name] = ptr_var
+			scope.vars[ptr_var_name] = ptr_var^
 
 			var := Var {
 				name     = stmt.name,
 				qbe_name = qbe.Temp(stmt.name),
 				type     = .Int,
-				ptr      = &scope.temp_vars[ptr_var_name],
+				ptr      = ptr_var,
 			}
 
 			scope.vars[stmt.name] = var
@@ -208,7 +205,7 @@ gen_var_def :: proc(
 
 				append(
 					&qbe_stmts,
-					qbe.Instr(qbe.Store{gen_type(type), value.(int), gen_var_to_value(ptr_var)}),
+					qbe.Instr(qbe.Store{gen_type(type), value.(int), gen_var_to_value(ptr_var^)}),
 				)
 
 				append(
@@ -216,7 +213,7 @@ gen_var_def :: proc(
 					qbe.TempDef {
 						stmt.name,
 						gen_type(type),
-						qbe.Load{.Word, gen_var_to_value(ptr_var)},
+						qbe.Load{.Word, gen_var_to_value(ptr_var^)},
 					},
 				)
 			case Variable:
@@ -240,7 +237,7 @@ gen_var_def :: proc(
 						qbe.Store {
 							gen_type(type),
 							gen_var_to_value(var),
-							gen_var_to_value(ptr_var),
+							gen_var_to_value(ptr_var^),
 						},
 					),
 				)
@@ -250,7 +247,7 @@ gen_var_def :: proc(
 					qbe.TempDef {
 						stmt.name,
 						gen_type(type),
-						qbe.Load{.Word, gen_var_to_value(ptr_var)},
+						qbe.Load{.Word, gen_var_to_value(ptr_var^)},
 					},
 				)
 			}
