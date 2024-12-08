@@ -187,6 +187,17 @@ gen_var_def :: proc(
 				type     = scope.temp_ptr_types[ptr_var_name],
 			}
 
+			scope.temp_vars[ptr_var_name] = ptr_var
+
+			var := Var {
+				name     = stmt.name,
+				qbe_name = qbe.Temp(stmt.name),
+				type     = .Int,
+				ptr      = &scope.temp_vars[ptr_var_name],
+			}
+
+			scope.vars[stmt.name] = var
+
 			append(&qbe_stmts, qbe.TempDef{ptr_var_name, .Long, qbe.Alloc{.a8, size_of(i32)}})
 
 			#partial switch value in stmt.value {
@@ -208,10 +219,54 @@ gen_var_def :: proc(
 						qbe.Load{.Word, gen_var_to_value(ptr_var)},
 					},
 				)
+			case Variable:
+				var := gen_get_var(scope^, string(value), span_stmt.span) or_return
+
+				if var.type != stmt.type {
+					err = error(
+						span_stmt.span,
+						"Variable %q expected type %v but variable %q has type %v",
+						stmt.name,
+						stmt.type,
+						var.name,
+						var.type,
+					)
+					return
+				}
+
+				append(
+					&qbe_stmts,
+					qbe.Instr(
+						qbe.Store {
+							gen_type(type),
+							gen_var_to_value(var),
+							gen_var_to_value(ptr_var),
+						},
+					),
+				)
+
+				append(
+					&qbe_stmts,
+					qbe.TempDef {
+						stmt.name,
+						gen_type(type),
+						qbe.Load{.Word, gen_var_to_value(ptr_var)},
+					},
+				)
 			}
 		}
 	}
 
+	return
+}
+
+gen_get_var :: proc(scope: Scope, name: string, span: Span) -> (var: Var, err: Maybe(Error)) {
+	if name not_in scope.vars {
+		err = error(span, "Variable %q is not declared", name)
+		return
+	}
+
+	var = scope.vars[name]
 	return
 }
 
