@@ -89,7 +89,7 @@ prs_func_sign :: proc(prs: ^Parser) -> (func_sign: FuncSign, err: Maybe(Error)) 
 		ret_type = .Void
 	}
 
-	func_sign = {name.(string), params[:], ret_type}
+	func_sign = {name.(Literal).(string), params[:], ret_type}
 	return
 }
 
@@ -176,11 +176,17 @@ prs_var_def :: proc(prs: ^Parser) -> (var_def: Spanned(Stmt), err: Maybe(Error))
 	value := prs_expr(prs) or_return
 
 	var_def.span = span
-	var_def.value = VarDef{name.(string), type, value}
+	var_def.value = VarDef{name.(Literal).(string), type, value}
 	return
 }
 
-prs_func_call :: proc(prs: ^Parser) -> (func_call: Spanned(Stmt), err: Maybe(Error)) {
+prs_func_call :: proc(
+	prs: ^Parser,
+	is_builtin := false,
+) -> (
+	func_call: Spanned(Stmt),
+	err: Maybe(Error),
+) {
 	span := prs_peek(prs^).span
 
 	name := prs_expect(prs, .Ident) or_return
@@ -207,7 +213,7 @@ prs_func_call :: proc(prs: ^Parser) -> (func_call: Spanned(Stmt), err: Maybe(Err
 	prs_expect(prs, .RParen) or_return
 
 	func_call.span = span
-	func_call.value = FuncCall{name.(string), args[:]}
+	func_call.value = FuncCall{name.(Literal).(string), args[:], is_builtin}
 	return
 }
 
@@ -241,20 +247,20 @@ prs_expr :: proc(prs: ^Parser) -> (expr: Expr, err: Maybe(Error)) {
 		}
 
 		prs.current += 1
-		expr = Ident(token.value.(string))
+		expr = Variable(token.value.(Literal).(string))
 	case .String:
 		prs.current += 1
-		expr = token.value.(string)
+		expr = token.value.(Literal)
 	case .Int:
 		prs.current += 1
-		expr = token.value.(int)
+		expr = token.value.(Literal)
 	case .Bool:
 		prs.current += 1
-		expr = token.value.(bool)
+		expr = token.value.(Literal)
 	case .At:
 		prs.current += 1
 		func_call := prs_func_call(prs) or_return
-		expr = BuiltinFuncCall(func_call.value.(FuncCall))
+		expr = func_call.value.(FuncCall)
 	case:
 		cons := prs.current - init_current
 		err = error(token.span, "Expected expression but got %v", token.type, consumed = cons)
@@ -288,7 +294,7 @@ prs_param :: proc(prs: ^Parser) -> (param: Param, err: Maybe(Error)) {
 		return
 	}
 
-	param = {name.(string), type, variadic}
+	param = {name.(Literal).(string), type, variadic}
 	return
 }
 
@@ -307,8 +313,6 @@ prs_type :: proc(prs: ^Parser) -> (type: Type, err: Maybe(Error)) {
 		type = .Bool
 	case .KW_Any:
 		type = .Any
-	case .KW_Ptr:
-		type = .Pointer
 	case:
 		cons := prs.current - init_current
 		err = error(token.span, "Expected type but got %v", token.type, consumed = cons)

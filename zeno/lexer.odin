@@ -84,7 +84,7 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 
 			lexer.current += 1
 			// str := string(lexer.source[lexer.start + 1:lexer.current - 1])
-			lexer_add(lexer, .String, string(str[:]))
+			lexer_add(lexer, .String, Literal(string(str[:])))
 		case '#':
 			for unicode.is_alpha(rune(lexer_peek(lexer^))) {
 				lexer.current += 1
@@ -117,8 +117,6 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 					lexer_add(lexer, .KW_Bool)
 				case "any":
 					lexer_add(lexer, .KW_Any)
-				case "ptr":
-					lexer_add(lexer, .KW_Ptr)
 				case "true":
 					lexer_add(lexer, .Bool, true)
 				case "false":
@@ -128,7 +126,7 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 				case "return":
 					lexer_add(lexer, .KW_Return)
 				case:
-					lexer_add(lexer, .Ident, ident)
+					lexer_add(lexer, .Ident, Literal(ident))
 				}
 			} else if unicode.is_digit(rune(char)) {
 				for unicode.is_digit(rune(lexer_peek(lexer^))) {
@@ -140,7 +138,7 @@ lexer_scan :: proc(lexer: ^Lexer) -> Maybe(Error) {
 				if !ok {
 					return error(lexer_span(lexer^), "Could not parse int")
 				}
-				lexer_add(lexer, .Int, int_value)
+				lexer_add(lexer, .Int, Literal(int_value))
 			} else {
 				return error(lexer_span(lexer^), "Invalid character: %c (%d)", char, char)
 			}

@@ -36,15 +36,18 @@ TokenType :: enum {
 	KW_Void,
 	KW_Bool,
 	KW_Any,
-	KW_Ptr,
 	KW_If,
 	KW_Return,
 }
 
 TokenValue :: union {
+	Literal,
+	Directive,
+}
+
+Literal :: union #no_nil {
 	string,
 	int,
-	Directive,
 	bool,
 }
 

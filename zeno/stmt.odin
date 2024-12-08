@@ -5,7 +5,7 @@ Spanned :: struct($T: typeid) {
 	value: T,
 }
 
-TopStmt :: union {
+TopStmt :: union #no_nil {
 	FuncDef,
 	ForeignFuncDecl,
 	BuiltinFuncDecl,
@@ -38,20 +38,25 @@ Param :: struct {
 	variadic: bool,
 }
 
-Type :: enum {
+Type :: union #no_nil {
+	BaseType,
+	^PointerType,
+}
+
+BaseType :: enum {
 	Void,
 	String,
 	Int,
 	Bool,
 	Any,
-	Pointer,
 }
 
-Stmt :: union {
+PointerType :: distinct Type
+
+Stmt :: union #no_nil {
 	VarDef,
 	FuncCall,
 	Return,
-	BuiltinFuncCall,
 }
 
 VarDef :: struct {
@@ -61,23 +66,19 @@ VarDef :: struct {
 }
 
 FuncCall :: struct {
-	name: string,
-	args: []Expr,
+	name:       string,
+	args:       []Expr,
+	is_builtin: bool,
 }
-
-BuiltinFuncCall :: distinct FuncCall
 
 Return :: struct {
 	value: Maybe(Expr),
 }
 
 Expr :: union #no_nil {
-	string,
-	int,
-	bool,
-	Ident,
+	Literal,
+	Variable,
 	FuncCall,
-	BuiltinFuncCall,
 }
 
-Ident :: distinct string
+Variable :: distinct string
