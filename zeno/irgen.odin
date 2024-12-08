@@ -177,10 +177,8 @@ gen_var_def :: proc(
 		#partial switch type {
 		case .Int:
 			ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
-			// mem: free me!!
 			ptr_var_type := new_clone(PointerType(.Int))
 
-			// mem: free me!!
 			ptr_var := new_clone(var_new_temp(ptr_var_name, ptr_var_type))
 			scope.vars[ptr_var_name] = ptr_var^
 

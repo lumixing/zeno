@@ -104,8 +104,17 @@ main :: proc() {
 		}
 	}
 
-	for c in out.scope.children {
-		free(c)
+	for child in out.scope.children {
+		for _, var in child.vars {
+			if type, ok := var.type.(^PointerType); ok {
+				free(type)
+			}
+			if ptr, ok := var.ptr.?; ok {
+				free(ptr)
+			}
+		}
+
+		free(child)
 	}
 
 	qbestr := qbe.bake(out.out.datas[:], out.out.funcs[:])
