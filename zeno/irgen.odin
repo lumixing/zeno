@@ -45,6 +45,10 @@ var_new_temp :: proc(name: string, type: Type, ptr: Maybe(^Var) = nil) -> Var {
 	return Var{name = name, qbe_name = qbe.Temp(name), type = type, ptr = ptr}
 }
 
+var_new_glob :: proc(name: string, type: Type, ptr: Maybe(^Var) = nil) -> Var {
+	return Var{name = name, qbe_name = qbe.Glob(name), type = type, ptr = ptr}
+}
+
 gen_qbe :: proc(top_stmts: []Spanned(TopStmt)) -> (out: Gen, err: Maybe(Error)) {
 	gen: Gen
 
@@ -168,13 +172,16 @@ gen_var_def :: proc(
 	err: Maybe(Error),
 ) {
 	stmt := span_stmt.value.(VarDef)
+	span := span_stmt.span
 
-	gen_check_name_in_funcs(gen^, stmt.name, span_stmt.span) or_return
-	gen_check_name_in_scope(scope^, stmt.name, span_stmt.span) or_return
+	gen_check_name_in_funcs(gen^, stmt.name, span) or_return
+	gen_check_name_in_scope(scope^, stmt.name, span) or_return
 
 	#partial switch type in stmt.type {
 	case BaseType:
 		#partial switch type {
+		case .String:
+
 		case .Int:
 			ptr_var_name := fmt.tprintf("%s.ptr", stmt.name)
 			ptr_var_type := new_clone(PointerType(.Int))
@@ -190,7 +197,7 @@ gen_var_def :: proc(
 			#partial switch value in stmt.value {
 			case Literal:
 				if _, is_int := value.(int); !is_int {
-					gen_err_var_type(span_stmt.span, stmt) or_return
+					gen_err_var_type(span, stmt) or_return
 				}
 
 				store_instr := qbe.Store{gen_type(type), value.(int), gen_var(ptr_var^)}
@@ -199,17 +206,11 @@ gen_var_def :: proc(
 				load_instr := qbe.Load{.Word, gen_var(ptr_var^)}
 				append(&qbe_stmts, qbe.TempDef{stmt.name, gen_type(type), load_instr})
 			case Variable:
-				var := gen_get_var(scope^, string(value), span_stmt.span) or_return
+				var := gen_get_var(scope^, string(value), span) or_return
 
 				if var.type != stmt.type {
-					err = error(
-						span_stmt.span,
-						"Variable %q expected type %v but variable %q has type %v",
-						stmt.name,
-						stmt.type,
-						var.name,
-						var.type,
-					)
+					err_msg := "Variable %q expected type %v but variable %q has type %v"
+					err = error(span, err_msg, stmt.name, stmt.type, var.name, var.type)
 					return
 				}
 
